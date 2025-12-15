@@ -1,18 +1,392 @@
-// nh - Simple Test
+// nh - A NetHack-style Dungeon Crawler
+// Rendered entirely in nh using text_* functions with Berkeley Mono font
 
-TILE := 32.
-hero_x := 5.
-hero_y := 5.
+// ============================================================================
+// Display Constants - Classic NetHack look
+// ============================================================================
+
+TILE_W := 10.           // Character width in pixels
+TILE_H := 16.           // Character height (font size)
+MAP_OFFSET_X := 20.     // Left margin
+MAP_OFFSET_Y := 32.     // Top margin  
+MAP_WIDTH := 76.        // Dungeon width (classic NetHack is 79)
+MAP_HEIGHT := 21.       // Dungeon height (classic NetHack is 21)
+
+// Character codes for dungeon tiles
+CHAR_FLOOR := 46.       // '.'
+CHAR_WALL_H := 45.      // '-' horizontal wall
+CHAR_WALL_V := 124.     // '|' vertical wall
+CHAR_PLAYER := 64.      // '@'
+CHAR_DOOR := 43.        // '+'
+CHAR_CORRIDOR := 35.    // '#'
+CHAR_STAIRS_DOWN := 62. // '>'
+CHAR_STAIRS_UP := 60.   // '<'
+CHAR_GOLD := 36.        // '$'
+CHAR_EMPTY := 32.       // ' ' space
+
+// Tile types
+TILE_EMPTY := 0.
+TILE_FLOOR := 1.
+TILE_WALL_H := 2.
+TILE_WALL_V := 3.
+TILE_CORRIDOR := 4.
+TILE_DOOR := 5.
+TILE_STAIRS := 6.
+TILE_GOLD := 7.
+
+// ============================================================================
+// Classic NetHack Colors (gray on black aesthetic)
+// ============================================================================
+
+// Standard dungeon - gray
+COL_GRAY_R := 170.
+COL_GRAY_G := 170.
+COL_GRAY_B := 170.
+
+// Player - bright white
+COL_WHITE_R := 255.
+COL_WHITE_G := 255.
+COL_WHITE_B := 255.
+
+// Gold - yellow
+COL_GOLD_R := 255.
+COL_GOLD_G := 255.
+COL_GOLD_B := 0.
+
+// Walls - brown/orange
+COL_BROWN_R := 180.
+COL_BROWN_G := 100.
+COL_BROWN_B := 40.
+
+// Stairs - white
+COL_CYAN_R := 0.
+COL_CYAN_G := 255.
+COL_CYAN_B := 255.
+
+// ============================================================================
+// Dungeon Map
+// ============================================================================
+
+dungeon := [].
+
+// ============================================================================
+// Player State
+// ============================================================================
+
+player_x := 10.
+player_y := 8.
+player_hp := 16.
+player_max_hp := 16.
+player_gold := 0.
+player_xp := 0.
+dungeon_level := 1.
+turns := 0.
+
+// Message
+last_message := "Welcome to nh! Find the stairs down.".
+
+// ============================================================================
+// Game State
+// ============================================================================
+
+game_initialized := 0.
+
+// ============================================================================
+// Dungeon Access
+// ============================================================================
+
+#get_tile(x, y) >
+    << TILE_EMPTY when x lt 0.
+    << TILE_EMPTY when y lt 0.
+    << TILE_EMPTY when x ge MAP_WIDTH.
+    << TILE_EMPTY when y ge MAP_HEIGHT.
+    idx := y * MAP_WIDTH + x.
+    << dungeon[idx].
+<
+
+#set_tile(x, y, val) >
+    << 0 when x lt 0.
+    << 0 when y lt 0.
+    << 0 when x ge MAP_WIDTH.
+    << 0 when y ge MAP_HEIGHT.
+    idx := y * MAP_WIDTH + x.
+    dungeon[idx] = val.
+<
+
+// ============================================================================
+// Room Generation - Classic NetHack style
+// ============================================================================
+
+#generate_dungeon() >
+    // Clear map
+    size := MAP_WIDTH * MAP_HEIGHT.
+    for i in 0..size >
+        dungeon[i] = TILE_EMPTY.
+    <
+    
+    // Generate rooms - carefully positioned for clean corridors
+    // Room 1: Starting room (left)
+    /make_room/2/2/12/7.
+    
+    // Room 2: Top center
+    /make_room/20/2/12/6.
+    
+    // Room 3: Top right
+    /make_room/38/2/12/6.
+    
+    // Room 4: Bottom left
+    /make_room/2/12/12/7.
+    
+    // Room 5: Bottom center
+    /make_room/20/11/12/8.
+    
+    // Room 6: Right large room
+    /make_room/54/4/16/12.
+    
+    // Connect with corridors - connect at door positions
+    // Room 1 right wall (x=13) to Room 2 left wall (x=20) at y=5
+    /connect_h/13/5/20.
+    
+    // Room 2 right wall (x=31) to Room 3 left wall (x=38) at y=5
+    /connect_h/31/5/38.
+    
+    // Room 3 right wall (x=49) to Room 6 left wall (x=54) at y=7
+    /connect_h/49/5/54.
+    
+    // Room 1 bottom wall (y=8) to Room 4 top wall (y=12) at x=7
+    /connect_v/7/8/12.
+    
+    // Room 2 bottom wall (y=7) to Room 5 top wall (y=11) at x=25
+    /connect_v/25/7/11.
+    
+    // Room 4 right wall (x=13) to Room 5 left wall (x=20) at y=15
+    /connect_h/13/15/20.
+    
+    // Room 5 right wall (x=31) to Room 6 left wall (x=54) at y=14
+    /connect_h/31/14/54.
+    
+    // Place stairs down in Room 6
+    /set_tile/62/9/TILE_STAIRS.
+    
+    // Place gold in various rooms
+    /set_tile/6/4/TILE_GOLD.
+    /set_tile/24/4/TILE_GOLD.
+    /set_tile/42/4/TILE_GOLD.
+    /set_tile/6/15/TILE_GOLD.
+    /set_tile/25/14/TILE_GOLD.
+    /set_tile/62/12/TILE_GOLD.
+    
+    // Set player start position (in Room 1)
+    player_x = 7.
+    player_y = 5.
+<
+
+#connect_h(x1, y, x2) >
+    // Horizontal corridor from x1 to x2 at row y
+    // Places doors at walls, corridor in between
+    x := x1.
+    loop when x le x2 >
+        tile := /get_tile/x/y.
+        // If it's a wall, make it a door
+        /set_tile/x/y/TILE_DOOR when tile == TILE_WALL_H.
+        /set_tile/x/y/TILE_DOOR when tile == TILE_WALL_V.
+        // If it's empty, make it corridor
+        /set_tile/x/y/TILE_CORRIDOR when tile == TILE_EMPTY.
+        x = x + 1.
+    <
+<
+
+#connect_v(x, y1, y2) >
+    // Vertical corridor from y1 to y2 at column x
+    y := y1.
+    loop when y le y2 >
+        tile := /get_tile/x/y.
+        // If it's a wall, make it a door
+        /set_tile/x/y/TILE_DOOR when tile == TILE_WALL_H.
+        /set_tile/x/y/TILE_DOOR when tile == TILE_WALL_V.
+        // If it's empty, make it corridor
+        /set_tile/x/y/TILE_CORRIDOR when tile == TILE_EMPTY.
+        y = y + 1.
+    <
+<
+
+#make_room(rx, ry, rw, rh) >
+    // Draw floor
+    for dy in 1..(rh - 1) >
+        for dx in 1..(rw - 1) >
+            /set_tile/(rx + dx)/(ry + dy)/TILE_FLOOR.
+        <
+    <
+    
+    // Draw horizontal walls (top and bottom)
+    for dx in 0..rw >
+        /set_tile/(rx + dx)/ry/TILE_WALL_H.
+        /set_tile/(rx + dx)/(ry + rh - 1)/TILE_WALL_H.
+    <
+    
+    // Draw vertical walls (left and right)
+    for dy in 1..(rh - 1) >
+        /set_tile/rx/(ry + dy)/TILE_WALL_V.
+        /set_tile/(rx + rw - 1)/(ry + dy)/TILE_WALL_V.
+    <
+<
+
+
+// ============================================================================
+// Movement
+// ============================================================================
+
+#can_walk(tile) >
+    << 1 when tile == TILE_FLOOR.
+    << 1 when tile == TILE_CORRIDOR.
+    << 1 when tile == TILE_DOOR.
+    << 1 when tile == TILE_STAIRS.
+    << 1 when tile == TILE_GOLD.
+    << 0.
+<
+
+#try_move(dx, dy) >
+    new_x := player_x + dx.
+    new_y := player_y + dy.
+    
+    tile := /get_tile/new_x/new_y.
+    walkable := /can_walk/tile.
+    
+    << 0 when walkable == 0.
+    
+    // Collect gold
+    last_message = "You pick up the gold." when tile == TILE_GOLD.
+    player_gold = player_gold + /rng_int/20 + 5 when tile == TILE_GOLD.
+    /set_tile/new_x/new_y/TILE_FLOOR when tile == TILE_GOLD.
+    
+    // Stairs message
+    last_message = "You see a staircase going down." when tile == TILE_STAIRS.
+    
+    player_x = new_x.
+    player_y = new_y.
+    turns = turns + 1.
+    
+    << 1.
+<
+
+// ============================================================================
+// Game Init
+// ============================================================================
 
 #game_init() >
-    /console_log/"nh initialized!".
+    /console_log/"nh dungeon initializing...".
+    /rng_seed/12345.
+    /generate_dungeon/.
+    game_initialized = 1.
+    /console_log/"Dungeon ready!".
 <
+
+// ============================================================================
+// Game Update
+// ============================================================================
 
 #game_update(dt) >
-    x := 1.
+    /do_update/ when game_initialized == 1.
 <
 
+#do_update() >
+    left := /input_key_just_pressed/0.
+    right := /input_key_just_pressed/1.
+    up := /input_key_just_pressed/2.
+    down := /input_key_just_pressed/3.
+    wait := /input_key_just_pressed/4.
+    
+    neg1 := 0 - 1.
+    /try_move/0/1 when down == 1.
+    /try_move/1/0 when right == 1.
+    /try_move/0/neg1 when up == 1.
+    /try_move/neg1/0 when left == 1.
+    
+    turns = turns + 1 when wait == 1.
+    last_message = "Time passes..." when wait == 1.
+<
+
+// ============================================================================
+// Rendering
+// ============================================================================
+
 #game_render() >
-    /gfx_clear/10/10/20/255.
-    /gfx_present/.
+    /do_render/ when game_initialized == 1.
+<
+
+#do_render() >
+    /text_clear/.
+    
+    // Draw dungeon
+    for y in 0..MAP_HEIGHT >
+        for x in 0..MAP_WIDTH >
+            /draw_tile/x/y.
+        <
+    <
+    
+    // Draw player on top
+    px := MAP_OFFSET_X + player_x * TILE_W.
+    py := MAP_OFFSET_Y + player_y * TILE_H.
+    /text_char/px/py/TILE_H/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/CHAR_PLAYER.
+    
+    // Draw status line (NetHack style)
+    /draw_status/.
+    
+    // Draw message line
+    /text_draw/MAP_OFFSET_X/560/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/last_message.
+<
+
+#draw_tile(x, y) >
+    tile := /get_tile/x/y.
+    << 0 when tile == TILE_EMPTY.
+    
+    sx := MAP_OFFSET_X + x * TILE_W.
+    sy := MAP_OFFSET_Y + y * TILE_H.
+    
+    // Floor
+    /text_char/sx/sy/TILE_H/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/CHAR_FLOOR when tile == TILE_FLOOR.
+    
+    // Walls
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_WALL_H when tile == TILE_WALL_H.
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_WALL_V when tile == TILE_WALL_V.
+    
+    // Corridor
+    /text_char/sx/sy/TILE_H/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/CHAR_CORRIDOR when tile == TILE_CORRIDOR.
+    
+    // Door
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_DOOR when tile == TILE_DOOR.
+    
+    // Stairs
+    /text_char/sx/sy/TILE_H/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/CHAR_STAIRS_DOWN when tile == TILE_STAIRS.
+    
+    // Gold
+    /text_char/sx/sy/TILE_H/COL_GOLD_R/COL_GOLD_G/COL_GOLD_B/CHAR_GOLD when tile == TILE_GOLD.
+<
+
+#draw_status() >
+    // NetHack-style status line at bottom
+    y := 375.
+    
+    // Character info
+    /text_draw/MAP_OFFSET_X/y/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"Player the Adventurer".
+    
+    // Stats line
+    y2 := 395.
+    /text_draw/MAP_OFFSET_X/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"Dlvl:".
+    /text_draw_int/70/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/dungeon_level.
+    
+    /text_draw/120/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"$:".
+    /text_draw_int/140/y2/14/COL_GOLD_R/COL_GOLD_G/COL_GOLD_B/player_gold.
+    
+    /text_draw/200/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"HP:".
+    /text_draw_int/230/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/player_hp.
+    /text_draw/250/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"(".
+    /text_draw_int/260/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/player_max_hp.
+    /text_draw/280/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/")".
+    
+    /text_draw/320/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"T:".
+    /text_draw_int/340/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/turns.
+    
+    // Controls
+    /text_draw/MAP_OFFSET_X/580/12/100/100/100/"Move: arrows/hjkl  Wait: .  Collect gold ($) and find the stairs (>)".
 <

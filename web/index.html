@@ -1,224 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DungeonScript</title>
+    <title>nh</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap');
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin: 0; padding: 0; }
+        body { background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .game { position: relative; width: 800px; height: 600px; }
+        #canvas, #textCanvas { position: absolute; top: 0; left: 0; }
+        #textCanvas { pointer-events: none; }
+        @font-face {
+            font-family: 'Berkeley Mono';
+            src: url('TX-02-03LLJR61/BerkeleyMono-Regular.woff2') format('woff2');
         }
-        
-        body {
-            background: #0a0a0f;
-            color: #e0e0e0;
-            font-family: 'VT323', monospace;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background-image: 
-                radial-gradient(circle at 20% 80%, rgba(120, 0, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 0, 120, 0.08) 0%, transparent 50%),
-                linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
-        }
-        
-        .container {
-            display: flex;
-            gap: 24px;
-            padding: 24px;
-            max-width: 1400px;
-        }
-        
-        .game-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        
-        .title {
-            font-family: 'Press Start 2P', cursive;
-            font-size: 18px;
-            color: #ff6b9d;
-            text-shadow: 0 0 20px rgba(255, 107, 157, 0.5);
-            letter-spacing: 2px;
-        }
-        
-        #game-canvas {
-            border: 3px solid #2a2a3a;
-            border-radius: 4px;
-            box-shadow: 
-                0 0 0 1px #1a1a2a,
-                0 0 40px rgba(120, 0, 255, 0.2),
-                inset 0 0 60px rgba(0, 0, 0, 0.5);
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-        }
-        
-        .code-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            width: 400px;
-        }
-        
-        .code-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .code-title {
-            font-size: 14px;
-            color: #8888aa;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        
-        .run-btn {
-            font-family: 'VT323', monospace;
-            font-size: 18px;
-            padding: 8px 24px;
-            background: linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%);
-            border: none;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
-        }
-        
-        .run-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
-        }
-        
-        .run-btn:active {
-            transform: translateY(0);
-        }
-        
-        #code-editor {
-            width: 100%;
-            height: 500px;
-            background: #0d0d14;
-            border: 2px solid #2a2a3a;
-            border-radius: 4px;
-            color: #c8ffc8;
-            font-family: 'VT323', monospace;
-            font-size: 18px;
-            padding: 16px;
-            resize: none;
-            outline: none;
-            line-height: 1.4;
-        }
-        
-        #code-editor:focus {
-            border-color: #7c3aed;
-            box-shadow: 0 0 20px rgba(124, 58, 237, 0.2);
-        }
-        
-        .status-bar {
-            display: flex;
-            justify-content: space-between;
-            font-size: 14px;
-            color: #666;
-        }
-        
-        .status-ok { color: #4ade80; }
-        .status-error { color: #f87171; }
-        
-        .console-output {
-            background: #0d0d14;
-            border: 2px solid #2a2a3a;
-            border-radius: 4px;
-            padding: 12px;
-            height: 100px;
-            overflow-y: auto;
-            font-size: 14px;
-            color: #888;
-        }
-        
-        .console-output .error { color: #f87171; }
-        .console-output .info { color: #60a5fa; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="game-panel">
-            <h1 class="title">⚔️ DungeonScript</h1>
-            <canvas id="game-canvas" width="800" height="600"></canvas>
-            <div class="status-bar">
-                <span id="status" class="status-ok">● Ready</span>
-                <span id="fps">60 FPS</span>
-            </div>
-        </div>
-        
-        <div class="code-panel">
-            <div class="code-header">
-                <span class="code-title">Bot Code</span>
-                <button class="run-btn" onclick="runBot()">▶ Run</button>
-            </div>
-            <textarea id="code-editor" spellcheck="false">// Your bot code here!
-// This runs each tick to control your hero.
-
-fn bot_tick(obs: int): int {
-    // obs contains what the hero sees
-    // Return an action:
-    //   0 = wait
-    //   1 = move up
-    //   2 = move down
-    //   3 = move left
-    //   4 = move right
-    
-    let action: int = rng_int(5);
-    return action;
-}
-</textarea>
-            <div class="console-output" id="console">
-                <div class="info">[DungeonScript] Ready to run...</div>
-            </div>
-        </div>
+    <div class="game">
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <canvas id="textCanvas" width="800" height="600"></canvas>
     </div>
-
     <script src="game.js"></script>
     <script>
-        const canvas = document.getElementById('game-canvas');
-        const ctx = canvas.getContext('2d');
-        const consoleEl = document.getElementById('console');
+        const canvas = document.getElementById('canvas');
+        const textCanvas = document.getElementById('textCanvas');
+        window.textCtx = textCanvas.getContext('2d');
         
         let wasmModule = null;
         let lastTime = performance.now();
-        let frameCount = 0;
         
-        function log(msg, type = '') {
-            const div = document.createElement('div');
-            div.className = type;
-            div.textContent = msg;
-            consoleEl.appendChild(div);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-        }
-        
-        // Key mapping
         const keyMap = {
-            'ArrowLeft': 0,
-            'ArrowRight': 1,
-            'ArrowUp': 2,
-            'ArrowDown': 3,
-            'Space': 4,
-            'Enter': 5,
+            'ArrowLeft': 0, 'ArrowRight': 1, 'ArrowUp': 2, 'ArrowDown': 3,
+            'Space': 4, 'Enter': 5,
+            'KeyW': 6, 'KeyA': 7, 'KeyS': 8, 'KeyD': 9,
+            'KeyH': 0, 'KeyL': 1, 'KeyK': 2, 'KeyJ': 3,
+            'Period': 4
         };
         
         document.addEventListener('keydown', (e) => {
             const key = keyMap[e.code];
             if (key !== undefined && wasmModule) {
                 wasmModule._on_key_down(key);
+                e.preventDefault();
             }
         });
         
@@ -229,124 +52,34 @@ fn bot_tick(obs: int): int {
             }
         });
         
-        function renderFrame() {
-            if (!wasmModule || !wasmModule.HEAPU8) return;
-            
-            const now = performance.now();
-            const dt = Math.floor(now - lastTime);  // dt in milliseconds as int
+        function renderFrame(now) {
+            if (!wasmModule) return;
+            const dt = Math.floor(now - lastTime);
             lastTime = now;
-            
-            // Update game
+            // Update and render first, THEN clear just_pressed flags for next frame
             wasmModule._game_update(dt);
             wasmModule._game_render();
-            
-            // Get framebuffer and render to canvas
-            const fbPtr = wasmModule._get_framebuffer();
-            const width = wasmModule._get_screen_width();
-            const height = wasmModule._get_screen_height();
-            
-            // Copy framebuffer data (handles memory growth)
-            const fb = new Uint8ClampedArray(
-                wasmModule.HEAPU8.buffer.slice(fbPtr, fbPtr + width * height * 4)
-            );
-            
-            const imageData = new ImageData(fb, width, height);
-            ctx.putImageData(imageData, 0, 0);
-            
-            // FPS counter
-            frameCount++;
-            if (frameCount % 30 === 0) {
-                document.getElementById('fps').textContent = Math.round(1000 / dt) + ' FPS';
-            }
-            
+            wasmModule._on_frame_start();  // Clear just_pressed AFTER reading them
             requestAnimationFrame(renderFrame);
         }
         
-        async function initGame() {
+        async function init() {
             try {
-                log('[DungeonScript] Loading WASM module...', 'info');
-                
-                // Load the Emscripten-generated module
-                wasmModule = await createModule();
-                
-                // Wait for runtime to be ready
-                if (wasmModule.onRuntimeInitialized) {
-                    await new Promise(resolve => {
-                        const old = wasmModule.onRuntimeInitialized;
-                        wasmModule.onRuntimeInitialized = () => { old?.(); resolve(); };
-                    });
-                }
-                
-                log('[DungeonScript] Initializing game...', 'info');
+                wasmModule = await createModule({
+                    canvas: canvas,
+                    print: (t) => console.log('[nh]', t),
+                    printErr: (t) => console.error('[nh]', t)
+                });
+                await new Promise(r => requestAnimationFrame(r));
                 wasmModule._game_init();
-                
-                log('[DungeonScript] Game started!', 'info');
-                document.getElementById('status').textContent = '● Running';
-                
+                lastTime = performance.now();
                 requestAnimationFrame(renderFrame);
-            } catch (err) {
-                log('[Error] ' + err.message, 'error');
-                console.error(err);
-                document.getElementById('status').textContent = '● Error';
-                document.getElementById('status').className = 'status-error';
+            } catch (e) {
+                console.error('Init failed:', e);
             }
         }
         
-        function runBot() {
-            const code = document.getElementById('code-editor').value;
-            log('[Bot] Compiling...', 'info');
-            
-            // In the full implementation, this would:
-            // 1. Send code to an embedded interpreter in WASM
-            // 2. Or send to a server to compile
-            // For now, just log
-            log('[Bot] Bot code updated!', 'info');
-        }
-        
-        // Check if WASM module exists
-        if (typeof createModule === 'undefined') {
-            // Demo mode without WASM
-            log('[Demo] WASM not loaded - showing demo', 'info');
-            
-            // Draw a simple demo
-            ctx.fillStyle = '#1a1a2a';
-            ctx.fillRect(0, 0, 800, 600);
-            
-            ctx.fillStyle = '#4ade80';
-            ctx.font = '24px "VT323"';
-            ctx.fillText('DungeonScript Demo', 300, 280);
-            ctx.fillText('Build with: make', 320, 320);
-            ctx.fillText('@ = Hero   # = Wall   . = Floor', 240, 380);
-            
-            // Draw a mini dungeon preview
-            const dungeon = [
-                '##########',
-                '#........#',
-                '#.##..##.#',
-                '#.#....#.#',
-                '#...@....#',
-                '#.#....#.#',
-                '#.##..##.#',
-                '#........#',
-                '##########',
-            ];
-            
-            ctx.font = '20px monospace';
-            dungeon.forEach((row, y) => {
-                [...row].forEach((char, x) => {
-                    let color = '#333';
-                    if (char === '@') color = '#4ade80';
-                    else if (char === '#') color = '#666';
-                    else if (char === '.') color = '#333';
-                    
-                    ctx.fillStyle = color;
-                    ctx.fillText(char, 300 + x * 20, 440 + y * 22);
-                });
-            });
-        } else {
-            initGame();
-        }
+        if (typeof createModule !== 'undefined') init();
     </script>
 </body>
 </html>
-

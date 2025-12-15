@@ -662,6 +662,26 @@ static void emit_lambdas(void) {
     }
 }
 
+// Emit forward declaration for a function
+static void codegen_function_decl(ASTNode *func) {
+    const char *ret_type = function_has_return(func->data.function.body) ? "int" : "void";
+    const char *name = mangle_func_name(func->data.function.name);
+    emit("%s %s(", ret_type, name);
+    
+    ASTList *params = func->data.function.params;
+    if (params && params->count > 0) {
+        for (size_t i = 0; i < params->count; i++) {
+            if (i > 0) emit_raw(", ");
+            ASTNode *p = params->items[i];
+            emit_raw("int %s", p->data.param.name);
+        }
+    } else {
+        emit_raw("void");
+    }
+    
+    emit_raw(");\n");
+}
+
 void codegen(ASTNode *root, FILE *output) {
     out = output;
     indent_level = 0;
@@ -685,29 +705,23 @@ void codegen(ASTNode *root, FILE *output) {
         }
         fprintf(out, "\n");
         
-        // Second pass: collect lambdas from functions
-        // (This happens during codegen_function)
+        // Second pass: emit forward declarations for all functions
+        fprintf(out, "// Forward declarations\n");
+        for (size_t i = 0; i < decls->count; i++) {
+            if (decls->items[i]->type == NODE_FUNCTION) {
+                codegen_function_decl(decls->items[i]);
+            }
+        }
+        fprintf(out, "\n");
         
-        // Third pass: emit collected lambdas
-        // (We need to do a pre-pass first to collect them)
-        
-        // Actually emit functions (lambdas will be collected)
-        // We'll do a two-phase approach: 
-        // 1. First traverse to collect lambdas
-        // 2. Emit lambdas
-        // 3. Emit functions
-        
-        // For now, emit lambdas after functions are processed
-        // This requires forward declarations or putting lambdas first
-        
-        // Emit functions
+        // Third pass: emit function definitions
         for (size_t i = 0; i < decls->count; i++) {
             if (decls->items[i]->type == NODE_FUNCTION) {
                 codegen_function(decls->items[i]);
             }
         }
         
-        // Emit any collected lambdas (they'll be at the end)
+        // Emit any collected lambdas
         if (collected_lambda_count > 0) {
             fprintf(out, "// Lambda functions\n");
             emit_lambdas();

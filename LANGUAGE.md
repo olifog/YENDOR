@@ -394,14 +394,129 @@ MAX_HP := 100.
 
 ## Runtime Functions
 
-These functions are provided by the runtime:
+The runtime exposes raw OpenGL bindings plus minimal utilities. This allows you to build graphics abstractions directly in nh!
+
+### Console / Debug
 
 ```
-/console_log/"message".     // Print string to console
-/console_log_int/42.        // Print integer to console
+/console_log/"message".         // Print string to console
+/console_log_int/42.            // Print integer
+/console_log_float/3.14f.       // Print float
+```
 
-// Graphics (when available)
-/gfx_clear/r/g/b/a.         // Clear screen
-/gfx_rect/x/y/w/h/r/g/b/a.  // Draw rectangle
-/gfx_present/.              // Present frame
+### Input
+
+```
+/input_key_pressed/key.         // 1 if key is held, 0 otherwise
+/input_key_just_pressed/key.    // 1 if key was just pressed this frame
+
+// Key codes:
+// 0=LEFT, 1=RIGHT, 2=UP, 3=DOWN, 4=SPACE, 5=ENTER
+// 6=W, 7=A, 8=S, 9=D
+```
+
+### Math
+
+```
+/math_sin/x.      /math_cos/x.
+/math_sqrt/x.     /math_abs/x.
+/math_floor/x.    /math_ceil/x.
+/math_min/a/b.    /math_max/a/b.
+```
+
+### RNG
+
+```
+/rng_seed/seed.     // Seed the RNG
+/rng_int/max.       // Random int in [0, max)
+/rng_float/.        // Random float in [0, 1)
+```
+
+### Timing
+
+```
+/time_now/.         // Current time in milliseconds
+```
+
+### Raw OpenGL Bindings
+
+Shaders:
+```
+shader := /gl_create_shader/GL_VERTEX_SHADER.
+/gl_shader_source_compile/shader/source.
+prog := /gl_create_program/.
+/gl_attach_shader/prog/shader.
+/gl_link_program/prog.
+/gl_use_program/prog.
+/gl_delete_shader/shader.
+```
+
+Uniforms:
+```
+loc := /gl_get_uniform_location/prog/"name".
+/gl_uniform1i/loc/value.
+/gl_uniform1f/loc/value.
+/gl_uniform2f/loc/x/y.
+/gl_uniform3f/loc/x/y/z.
+/gl_uniform4f/loc/x/y/z/w.
+```
+
+Buffers:
+```
+buf := /gl_create_buffer/.
+/gl_bind_buffer/GL_ARRAY_BUFFER/buf.
+/gl_delete_buffer/buf.
+```
+
+Vertex Arrays:
+```
+vao := /gl_create_vertex_array/.
+/gl_bind_vertex_array/vao.
+/gl_delete_vertex_array/vao.
+```
+
+Attributes:
+```
+loc := /gl_get_attrib_location/prog/"name".
+/gl_enable_vertex_attrib_array/loc.
+/gl_vertex_attrib_pointer/loc/size/type/normalized/stride/offset.
+```
+
+Drawing:
+```
+/gl_clear_color/r/g/b/a.        // Set clear color (0.0-1.0)
+/gl_clear/GL_COLOR_BUFFER_BIT.  // Clear
+/gl_viewport/x/y/w/h.           // Set viewport
+/gl_enable/GL_BLEND.            // Enable capability
+/gl_disable/cap.                // Disable capability
+/gl_blend_func/src/dst.         // Set blend function
+/gl_draw_arrays/mode/first/count.
+/gl_draw_elements/mode/count/type/offset.
+```
+
+Float Buffers (for vertex data):
+```
+handle := /buf_create_floats/count.     // Create CPU buffer
+/buf_set_float/handle/index/value.      // Set float at index
+/buf_upload/GL_ARRAY_BUFFER/handle/usage. // Upload to GPU
+/buf_free/handle.                        // Free buffer
+```
+
+### GL Constants
+
+Define these as globals in your nh code:
+```
+GL_ARRAY_BUFFER := 34962.
+GL_STATIC_DRAW := 35044.
+GL_DYNAMIC_DRAW := 35048.
+GL_VERTEX_SHADER := 35633.
+GL_FRAGMENT_SHADER := 35632.
+GL_TRIANGLES := 4.
+GL_FLOAT := 5126.
+GL_BLEND := 3042.
+GL_SRC_ALPHA := 770.
+GL_ONE_MINUS_SRC_ALPHA := 771.
+GL_COLOR_BUFFER_BIT := 16384.
+GL_TRUE := 1.
+GL_FALSE := 0.
 ```

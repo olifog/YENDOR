@@ -1,4 +1,4 @@
-# DungeonScript Build System
+# nh Language Build System
 # Requires: bison, flex, emscripten (emcc)
 
 # Directories
@@ -18,10 +18,16 @@ EMCC = emcc
 # Flags
 CFLAGS = -Wall -Wextra -g
 EMFLAGS = -O2 -s WASM=1 \
-          -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPU8"]' \
-          -s EXPORTED_FUNCTIONS='["_game_init","_game_update","_game_render","_on_key_down","_on_key_up","_get_framebuffer","_get_screen_width","_get_screen_height","_malloc","_free"]' \
+          -s USE_WEBGL2=1 \
+          -s FULL_ES3=1 \
+          -s MIN_WEBGL_VERSION=2 \
+          -s MAX_WEBGL_VERSION=2 \
+          -s OFFSCREENCANVAS_SUPPORT=0 \
+          -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
+          -s EXPORTED_FUNCTIONS='["_game_init","_game_update","_game_render","_on_key_down","_on_key_up","_on_frame_start","_malloc","_free"]' \
           -s ALLOW_MEMORY_GROWTH=1 \
-          -s MODULARIZE=1 -s EXPORT_NAME='createModule'
+          -s MODULARIZE=1 -s EXPORT_NAME='createModule' \
+          -lm
 
 # Default target
 .PHONY: all
@@ -61,17 +67,17 @@ compiler: $(BUILD_DIR) $(COMPILER_DIR)/parser.tab.c $(COMPILER_DIR)/lex.yy.c
 .PHONY: test-compiler
 test-compiler: compiler
 	@echo "=== Parsing example ===" 
-	$(BUILD_DIR)/dsc --ast $(EXAMPLES_DIR)/hello.ds
+	$(BUILD_DIR)/dsc --ast $(EXAMPLES_DIR)/hello.nh
 	@echo ""
 	@echo "=== Generating C code ==="
-	$(BUILD_DIR)/dsc $(EXAMPLES_DIR)/hello.ds
+	$(BUILD_DIR)/dsc $(EXAMPLES_DIR)/hello.nh
 
 # ============================================================================
 # Compile game to C (using our compiler)
 # ============================================================================
 
-$(BUILD_DIR)/game.c: compiler $(GAME_DIR)/main.ds
-	$(BUILD_DIR)/dsc $(GAME_DIR)/main.ds -o $(BUILD_DIR)/game.c
+$(BUILD_DIR)/game.c: compiler $(GAME_DIR)/main.nh
+	$(BUILD_DIR)/dsc $(GAME_DIR)/main.nh -o $(BUILD_DIR)/game.c
 
 # ============================================================================
 # Build WASM (using Emscripten)
@@ -135,11 +141,11 @@ test: compiler
 
 .PHONY: help
 help:
-	@echo "DungeonScript Build System"
+	@echo "nh Language Build System"
 	@echo ""
 	@echo "Targets:"
 	@echo "  make              - Build the compiler (default)"
-	@echo "  make compiler     - Build the DungeonScript compiler"
+	@echo "  make compiler     - Build the nh compiler"
 	@echo "  make test-compiler- Test the compiler on examples"
 	@echo "  make wasm         - Build game to WASM (requires emscripten)"
 	@echo "  make serve        - Start dev server for web frontend"
@@ -152,4 +158,3 @@ help:
 	@echo "  - flex (lexer generator)"
 	@echo "  - gcc (for native compiler build)"
 	@echo "  - emscripten (for WASM build)"
-
