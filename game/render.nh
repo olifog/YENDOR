@@ -60,9 +60,19 @@ COL_GREEN_B := 100.
         <
     <
     
-    // Draw player
-    px := map_offset_x + player_x * TILE_W.
-    py := map_offset_y + player_y * TILE_H.
+    // Draw player with interpolated position for smooth movement
+    t_ms := ANIM_DURATION - anim_timer.
+    
+    prev_px := player_prev_x * TILE_W.
+    curr_px := player_x * TILE_W.
+    prev_py := player_prev_y * TILE_H.
+    curr_py := player_y * TILE_H.
+    
+    draw_x := prev_px + (curr_px - prev_px) * t_ms / ANIM_DURATION.
+    draw_y := prev_py + (curr_py - prev_py) * t_ms / ANIM_DURATION.
+    
+    px := map_offset_x + draw_x.
+    py := map_offset_y + draw_y.
     /text_char/px/py/TILE_H/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/CHAR_PLAYER.
     
     // Status

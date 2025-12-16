@@ -12,6 +12,11 @@ player_gold := 0.
 dungeon_level := 1.
 turns := 0.
 
+// Animation state
+anim_timer := 0.
+player_prev_x := 5.
+player_prev_y := 4.
+
 // Bot state
 bot_running := 0.
 bot_timer := 0.
@@ -50,8 +55,13 @@ last_message := "Write code to control @. Press F5 to run.".
     // Stairs
     last_message = "You found the stairs! Level complete!" when tile == TILE_STAIRS.
     
+    // Save previous position for animation
+    player_prev_x = player_x.
+    player_prev_y = player_y.
+    
     player_x = new_x.
     player_y = new_y.
+    anim_timer = ANIM_DURATION.
     turns = turns + 1.
     
     << 1.

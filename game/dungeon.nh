@@ -571,6 +571,9 @@ centers := [].
     x0 := c0 - y0 * 1000.
     player_x = x0.
     player_y = y0.
+    player_prev_x = x0.
+    player_prev_y = y0.
+    anim_timer = 0.
     
     // Place Stairs in random VALID and CONNECTED room
     sp := 0.

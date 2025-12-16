@@ -17,6 +17,8 @@ SCREEN_H := 720.
 // Layout mode: 0 = side by side, 1 = stacked (editor below)
 layout_mode := 0.
 
+ANIM_DURATION := 30.    // Animation duration in ms
+
 // Panel bounds
 dungeon_x := 0.
 dungeon_y := 0.
@@ -117,6 +119,10 @@ game_initialized := 0.
 
 #do_update(dt) >
     /calculate_layout/.
+    
+    // Update animation timer
+    anim_timer = anim_timer - dt.
+    anim_timer = 0 when anim_timer lt 0.
     
     // Update editor (handles all input)
     /editor_update/dt.
