@@ -472,7 +472,7 @@ static void codegen_stmt(ASTNode *node) {
     // Detect type from initializer
     if (node->data.var_decl.init &&
         node->data.var_decl.init->type == NODE_ARRAY) {
-      emit("long %s[1024] = ", node->data.var_decl.name);
+      emit("long %s[16384] = ", node->data.var_decl.name);
       codegen_expr(node->data.var_decl.init);
       emit_raw(";\n");
     } else if (node->data.var_decl.init &&
@@ -658,7 +658,7 @@ static void codegen_function(ASTNode *func) {
 static void codegen_global_var(ASTNode *node) {
   if (node->data.var_decl.init &&
       node->data.var_decl.init->type == NODE_ARRAY) {
-    emit("long %s[1024] = ", node->data.var_decl.name);
+    emit("long %s[16384] = ", node->data.var_decl.name);
     codegen_expr(node->data.var_decl.init);
     emit_raw(";\n");
   } else if (node->data.var_decl.init &&

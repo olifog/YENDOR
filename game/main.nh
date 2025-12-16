@@ -145,26 +145,26 @@ game_initialized := 0.
     // Room 6: Right large room
     /make_room/54/4/16/12.
     
-    // Connect with corridors - connect at door positions
-    // Room 1 right wall (x=13) to Room 2 left wall (x=20) at y=5
+    // Connect with corridors
+    // Room 1 to Room 2 at y=5
     /connect_h/13/5/20.
     
-    // Room 2 right wall (x=31) to Room 3 left wall (x=38) at y=5
+    // Room 2 to Room 3 at y=5
     /connect_h/31/5/38.
     
-    // Room 3 right wall (x=49) to Room 6 left wall (x=54) at y=7
+    // Room 3 to Room 6 at y=5
     /connect_h/49/5/54.
     
-    // Room 1 bottom wall (y=8) to Room 4 top wall (y=12) at x=7
+    // Room 1 to Room 4 at x=7
     /connect_v/7/8/12.
     
-    // Room 2 bottom wall (y=7) to Room 5 top wall (y=11) at x=25
+    // Room 2 to Room 5 at x=25
     /connect_v/25/7/11.
     
-    // Room 4 right wall (x=13) to Room 5 left wall (x=20) at y=15
+    // Room 4 to Room 5 at y=15
     /connect_h/13/15/20.
     
-    // Room 5 right wall (x=31) to Room 6 left wall (x=54) at y=14
+    // Room 5 to Room 6 at y=14
     /connect_h/31/14/54.
     
     // Place stairs down in Room 6
