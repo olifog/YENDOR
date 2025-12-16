@@ -914,7 +914,13 @@ centers := [].
 <
 
 #do_render() >
-    /render_background/.
+    // Calculate player position for torch effect shader
+    px := dungeon_x + player_x * TILE_W.
+    py := dungeon_y + 12 + player_y * TILE_H.
+
+    // Render swirly background shader with player position for torch effect
+    /render_background/px/py.
+
     /text_clear/.
     /render_dungeon/.
     /render_editor/.

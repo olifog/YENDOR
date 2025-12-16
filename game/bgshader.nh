@@ -24,6 +24,7 @@ bg_vao := 0.
 bg_vbo := 0.
 bg_time_loc := 0.
 bg_res_loc := 0.
+bg_pos_loc := 0.
 bg_shader_ready := 0.
 bg_start_time := 0.
 
@@ -42,13 +43,24 @@ precision highp float;
 out vec4 FragColor;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform vec2 uPlayerPos;
+
+// Pseudo-random function
+float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
 
 void main() {
     vec2 uv = gl_FragCoord.xy / uResolution;
     vec2 p = (uv - 0.5) * 2.0;
     p.x *= uResolution.x / uResolution.y;
     
-    float t = uTime / 1000.0 * 0.4;
+    float t = uTime / 1000.0;
+    
+    // --- Existing Dungeon Background (darker) ---
+    float t_swirl = t * 0.4;
     float r = length(p);
     float a = atan(p.y, p.x);
     
@@ -69,16 +81,39 @@ void main() {
     col = mix(col, c2, v1 * 0.35);
     col = mix(col, c3, v2 * 0.25);
     col = mix(col, c4, v3 * 0.2);
-    
+
     // Add subtle pulsing glow
     float pulse = sin(t * 2.0) * 0.5 + 0.5;
     col += vec3(0.01, 0.005, 0.02) * pulse * v4;
     
+    // --- Torch Light Effect ---
+    // Distance from player (in pixels)
+    float dist = length(gl_FragCoord.xy - uPlayerPos);
+    
+    // Flickering radius
+    // Base radius + sine wave + fast noise
+    float flicker = sin(t * 5.0) * 0.15 + cos(t * 7.0) * 0.05 + hash(vec2(t, 0.0)) * 0.15;
+    float radius = 20.0 + flicker * 20.0;
+    
+    // Light attenuation
+    float atten = 1.0 - smoothstep(radius * 0.1, radius, dist);
+    
+    // Torch colors
+    vec3 torchColor = vec3(1.0, 0.7, 0.3); // Bright orange core
+    vec3 glowColor = vec3(0.8, 0.3, 0.1); // Reddish glow
+    
+    vec3 light = mix(glowColor, torchColor, smoothstep(radius * 0.6, 0.0, dist));
+    
+    // Apply light to background
+    // Center is purely light, edges blend into background
+    // Multiply background by light to reveal it, plus add light for glow
+    vec3 finalCol = col + light * atten * 0.6;
+    
     // Vignette - darker at edges
     float vig = 1.0 - smoothstep(0.3, 1.5, r);
-    col *= 0.7 + 0.3 * vig;
+    finalCol *= 0.7 + 0.3 * vig;
     
-    FragColor = vec4(col, 1.0);
+    FragColor = vec4(finalCol, 1.0);
 }".
 
 // ============================================================================
@@ -112,6 +147,7 @@ void main() {
     // Get uniform locations
     bg_time_loc = /gl_get_uniform_location/bg_shader_prog/"uTime".
     bg_res_loc = /gl_get_uniform_location/bg_shader_prog/"uResolution".
+    bg_pos_loc = /gl_get_uniform_location/bg_shader_prog/"uPlayerPos".
     
     // Create VAO and VBO for fullscreen quad
     bg_vao = /gl_create_vertex_array/.
@@ -158,7 +194,7 @@ void main() {
 // Render Background
 // ============================================================================
 
-#render_background() >
+#render_background(px, py) >
     << 0 when bg_shader_ready == 0.
     
     // Calculate elapsed time in milliseconds
@@ -168,8 +204,7 @@ void main() {
     // Use our shader program
     /gl_use_program/bg_shader_prog.
     
-    // Set uniforms - elapsed is in ms, shader divides by 1000 for seconds
-    // C will convert the long to float automatically
+    // Set uniforms
     /gl_uniform1f/bg_time_loc/elapsed.
     
     // Get dynamic screen dimensions
@@ -178,6 +213,15 @@ void main() {
     sw_f := sw * 1.0f.
     sh_f := sh * 1.0f.
     /gl_uniform2f/bg_res_loc/sw_f/sh_f.
+    
+    // Convert game Y (down) to GL Y (up)
+    // Assuming 600 height
+    gl_py := 600.0f - py.
+    // Adjust slightly to center on character (approx half tile height)
+    gl_py = gl_py - 8.0f. 
+    px_f := px + 5.0f. // Center on width (avg tile width 10)
+    
+    /gl_uniform2f/bg_pos_loc/px_f/gl_py.
     
     // Draw fullscreen quad
     /gl_bind_vertex_array/bg_vao.
