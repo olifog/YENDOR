@@ -37,6 +37,7 @@ int yycolumn = 1;
 "not"           { return NOT; }
 "true"          { return TRUE; }
 "false"         { return FALSE; }
+"@use"          { return USE; }
 
     /* Word-based comparison operators */
 "lt"            { return LT; }

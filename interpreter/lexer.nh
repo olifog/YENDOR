@@ -1,0 +1,242 @@
+// Token types
+TOK_INT := 1.
+TOK_IDENT := 2.
+TOK_PLUS := 3.
+TOK_MINUS := 4.
+TOK_STAR := 5.
+TOK_SLASH := 6.
+TOK_PERCENT := 7.
+TOK_ASSIGN := 8.
+TOK_DOT := 9.
+TOK_EOF := 10.
+TOK_LPAREN := 11.
+TOK_RPAREN := 12.
+TOK_LT := 13.
+TOK_GT := 14.
+TOK_LE := 15.
+TOK_GE := 16.
+TOK_EQ := 17.
+TOK_NE := 18.
+TOK_AND := 19.
+TOK_OR := 20.
+TOK_NOT := 21.
+TOK_LOOP := 22.
+TOK_WHEN := 23.
+TOK_UNLESS := 24.
+TOK_IF := 25.
+TOK_ELSE := 26.
+TOK_BREAK := 27.
+TOK_SCOPE_IN := 28. // >
+TOK_SCOPE_OUT := 29. // <
+TOK_FOR := 30.
+TOK_IN := 31.
+TOK_RANGE := 32. // ..
+TOK_HASH := 33.   // # for function def
+TOK_RETURN := 34. // << for return
+TOK_COMMA := 35.  // , for parameter lists
+TOK_PIPE := 36.   // | for match
+TOK_ARROW := 37.  // => for match arm
+TOK_UNDER := 38.  // _ for wildcard
+TOK_STRING := 39. // String literal
+TOK_LBRACKET := 40. // [
+TOK_RBRACKET := 41. // ]
+TOK_LBRACE := 42.   // {
+TOK_RBRACE := 43.   // }
+TOK_COLON := 44.    // :
+TOK_PROPACCESS := 45. // ->
+TOK_BACKSLASH := 46.  // \ for lambda
+
+// Token constructor
+// Token constructor
+#token(type, value) >
+    t := /ds_object_create/0.
+    /ds_set_prop/t/"type"/type.
+    /ds_set_prop/t/"value"/value.
+    << t.
+<
+
+// Lexer Helpers
+#is_digit(c) => c ge 48 and c le 57.
+#is_alpha(c) => (c ge 65 and c le 90) or (c ge 97 and c le 122).
+#is_space(c) => c == 32 or c == 10 or c == 9 or c == 13.
+
+#parse_int(str, start) >
+    len := /ds_strlen/str.
+    val := 0.
+    i := start.
+    loop >
+        c := /ds_string_at/str/i.
+        >> when i ge len or not (/is_digit/c).
+        val = val * 10 + (c - 48).
+        i = i + 1.
+    <
+    << { val: val, end: i }.
+<
+
+#parse_ident(str, start) >
+    len := /ds_strlen/str.
+    i := start.
+    
+    loop >
+        c := /ds_string_at/str/i.
+        >> when i ge len or not (/is_alpha/c).
+        i = i + 1.
+    <
+    
+    val := /ds_substring/str/start/(i - start).
+    << { val: val, end: i }.
+<
+
+#tokenize_digit(str, i, tokens) >
+    res := /parse_int/str/i.
+    /ds_list_push/tokens/(/token/TOK_INT/res->val).
+    << res->end.
+<
+
+#tokenize_string(str, i, tokens) >
+    // Skip opening quote
+    i = i + 1.
+    start := i.
+    len := /ds_strlen/str.
+    
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/str/i.
+        >> when c == 34. // closing "
+        i = i + 1.
+    <
+    
+    val := /ds_substring/str/start/(i - start).
+    /ds_list_push/tokens/(/token/TOK_STRING/val).
+    << i + 1. // Skip closing quote
+<
+
+#check_keyword(str, type) => { type: type, is_kw: 1 }.
+#check_ident(str) => { type: TOK_IDENT, value: str, is_kw: 0 }.
+
+#tokenize_alpha(str, i, tokens) >
+    res := /parse_ident/str/i.
+    s := res->val.
+    
+    type := TOK_IDENT.
+    
+    type = (/ds_streq/s/"lt") | > 1 => TOK_LT _ => type <.
+    type = (/ds_streq/s/"gt") | > 1 => TOK_GT _ => type <.
+    type = (/ds_streq/s/"le") | > 1 => TOK_LE _ => type <.
+    type = (/ds_streq/s/"ge") | > 1 => TOK_GE _ => type <.
+    type = (/ds_streq/s/"eq") | > 1 => TOK_EQ _ => type <.
+    type = (/ds_streq/s/"ne") | > 1 => TOK_NE _ => type <.
+    type = (/ds_streq/s/"and") | > 1 => TOK_AND _ => type <.
+    type = (/ds_streq/s/"or") | > 1 => TOK_OR _ => type <.
+    type = (/ds_streq/s/"not") | > 1 => TOK_NOT _ => type <.
+    type = (/ds_streq/s/"loop") | > 1 => TOK_LOOP _ => type <.
+    type = (/ds_streq/s/"when") | > 1 => TOK_WHEN _ => type <.
+    type = (/ds_streq/s/"unless") | > 1 => TOK_UNLESS _ => type <.
+    type = (/ds_streq/s/"if") | > 1 => TOK_IF _ => type <.
+    type = (/ds_streq/s/"else") | > 1 => TOK_ELSE _ => type <.
+    type = (/ds_streq/s/"for") | > 1 => TOK_FOR _ => type <.
+    type = (/ds_streq/s/"in") | > 1 => TOK_IN _ => type <.
+    
+    val := (type == TOK_IDENT) | > 1 => s 0 => 0 <.
+    
+    /ds_list_push/tokens/(/token/type/val).
+    << res->end.
+<
+
+#do(a, b) => b.
+
+#tokenize_symbol_str(str, i, tokens) >
+    c := /ds_string_at/str/i.
+    next := /ds_string_at/str/(i + 1).
+    
+    // Check for ==
+    is_eq := (c == 61 and next == 61).
+    << /do/(/ds_list_push/tokens/(/token/TOK_EQ/0))/(i + 2) when is_eq.
+    
+    // Check for !=
+    is_neq := (c == 33 and next == 61).
+    << /do/(/ds_list_push/tokens/(/token/TOK_NE/0))/(i + 2) when is_neq.
+    
+    // Check for >>
+    is_break := (c == 62 and next == 62).
+    << /do/(/ds_list_push/tokens/(/token/TOK_BREAK/0))/(i + 2) when is_break.
+    
+    // Check for ..
+    is_range := (c == 46 and next == 46).
+    << /do/(/ds_list_push/tokens/(/token/TOK_RANGE/0))/(i + 2) when is_range.
+
+    // Check for << (return)
+    is_return := (c == 60 and next == 60).
+    << /do/(/ds_list_push/tokens/(/token/TOK_RETURN/0))/(i + 2) when is_return.
+
+    // Check for => (arrow)
+    is_arrow := (c == 61 and next == 62).
+    << /do/(/ds_list_push/tokens/(/token/TOK_ARROW/0))/(i + 2) when is_arrow.
+
+    // Check for -> (property access)
+    is_prop := (c == 45 and next == 62).
+    << /do/(/ds_list_push/tokens/(/token/TOK_PROPACCESS/0))/(i + 2) when is_prop.
+
+    // Single char
+    << c | >
+        43 => /do/(/ds_list_push/tokens/(/token/TOK_PLUS/0))/(i + 1)
+        45 => /do/(/ds_list_push/tokens/(/token/TOK_MINUS/0))/(i + 1)
+        42 => /do/(/ds_list_push/tokens/(/token/TOK_STAR/0))/(i + 1)
+        47 => /do/(/ds_list_push/tokens/(/token/TOK_SLASH/0))/(i + 1)
+        37 => /do/(/ds_list_push/tokens/(/token/TOK_PERCENT/0))/(i + 1)
+        46 => /do/(/ds_list_push/tokens/(/token/TOK_DOT/0))/(i + 1)
+        58 => /do/(/ds_list_push/tokens/(/token/TOK_ASSIGN/0))/(i + 2) // :=
+        61 => /do/(/ds_list_push/tokens/(/token/TOK_ASSIGN/0))/(i + 1) // =
+        40 => /do/(/ds_list_push/tokens/(/token/TOK_LPAREN/0))/(i + 1)
+        41 => /do/(/ds_list_push/tokens/(/token/TOK_RPAREN/0))/(i + 1)
+        60 => /do/(/ds_list_push/tokens/(/token/TOK_SCOPE_OUT/0))/(i + 1) // <
+        62 => /do/(/ds_list_push/tokens/(/token/TOK_SCOPE_IN/0))/(i + 1) // >
+        35 => /do/(/ds_list_push/tokens/(/token/TOK_HASH/0))/(i + 1) // #
+        44 => /do/(/ds_list_push/tokens/(/token/TOK_COMMA/0))/(i + 1) // ,
+        124 => /do/(/ds_list_push/tokens/(/token/TOK_PIPE/0))/(i + 1) // |
+        95 => /do/(/ds_list_push/tokens/(/token/TOK_UNDER/0))/(i + 1) // _
+        91 => /do/(/ds_list_push/tokens/(/token/TOK_LBRACKET/0))/(i + 1) // [
+        93 => /do/(/ds_list_push/tokens/(/token/TOK_RBRACKET/0))/(i + 1) // ]
+        123 => /do/(/ds_list_push/tokens/(/token/TOK_LBRACE/0))/(i + 1) // {
+        125 => /do/(/ds_list_push/tokens/(/token/TOK_RBRACE/0))/(i + 1) // }
+        58 => /do/(/ds_list_push/tokens/(/token/TOK_COLON/0))/(i + 1) // : (single, not :=)
+        92 => /do/(/ds_list_push/tokens/(/token/TOK_BACKSLASH/0))/(i + 1) // \
+        _ => (i + 1)
+    <.
+<
+
+#tokenize(str) >
+    tokens := /ds_list_create/.
+    len := /ds_strlen/str.
+    i := 0.
+    
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/str/i.
+        
+        i = (
+            /is_space/c | >
+                true => i + 1
+                false => (
+                    /is_digit/c | >
+                        true => /tokenize_digit/str/i/tokens
+                        false => (
+                            /is_alpha/c | >
+                                true => /tokenize_alpha/str/i/tokens
+                                false => (
+                                    c == 34 | > // " for string
+                                        true => /tokenize_string/str/i/tokens
+                                        false => /tokenize_symbol_str/str/i/tokens
+                                    <
+                                )
+                            <
+                        )
+                    <
+                )
+            <
+        ).
+    <
+    
+    /ds_list_push/tokens/(/token/TOK_EOF/0).
+    << tokens.
+<

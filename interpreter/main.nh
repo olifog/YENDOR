@@ -1,0 +1,291 @@
+// Main module - entry point with @use directives for modularity
+@use "ast.nh".
+@use "lexer.nh".
+@use "evaluator.nh".
+@use "parser.nh".
+
+#run_test(name, source, expected) >
+    /console_log/name.
+    
+    tokens := /tokenize/source.
+    ast := /parse_program/tokens.
+    
+    env := /env_new/.
+    result := /eval/ast/env.
+    
+    match := (result == expected) | >
+        1 => "PASS"
+        0 => "FAIL"
+    <.
+    
+    /console_log/match.
+    << 0.
+<
+
+#main() >
+    /console_log/"Running Self-Interpreter Tests...".
+    
+    // ========================================
+    // Basic Expressions
+    // ========================================
+    
+    /run_test/"Test 1: Basic Literal"/"42."/42.
+    /run_test/"Test 2: Basic Addition"/"10 + 32."/42.
+    /run_test/"Test 3: Multiple Additions"/"1 + 2 + 3 + 4."/10.
+    
+    // ========================================
+    // Variables
+    // ========================================
+    
+    /run_test/"Test 4: Variables"/
+        "x := 10.
+         x + 5."
+        /15.
+    
+    /run_test/"Test 5: Multiple Variables"/
+        "x := 10.
+         y := 20.
+         x + y."
+        /30.
+    
+    /run_test/"Test 6: Reassignment"/
+        "x := 10.
+         x := 20.
+         x + 5."
+        /25.
+
+    // ========================================
+    // Arithmetic
+    // ========================================
+    
+    /run_test/"Test 7: Subtraction"/"10 - 5."/5.
+    /run_test/"Test 7: Multiplication"/"3 * 4."/12.
+    /run_test/"Test 7: Division"/"20 / 5."/4.
+    /run_test/"Test 7: Modulo"/"10 % 3."/1.
+    /run_test/"Test 8: Precedence"/"2 + 3 * 4."/14.
+    /run_test/"Test 8: Parens"/"(2 + 3) * 4."/20.
+    
+    // ========================================
+    // Comparison & Logic
+    // ========================================
+    
+    /run_test/"Test 9: Less Than"/"10 lt 20."/1.
+    /run_test/"Test 9: Greater Than"/"10 gt 5."/1.
+    /run_test/"Test 9: Equal"/"10 == 10."/1.
+    /run_test/"Test 9: Not Equal"/"10 != 5."/1.
+    /run_test/"Test 9: False"/"10 lt 5."/0.
+    /run_test/"Test 10: Or"/"1 or 0."/1.
+    /run_test/"Test 10: Not"/"not 0."/1.
+
+    // ========================================
+    // Conditional Modifiers
+    // ========================================
+
+    /run_test/"Test 12: When True"/
+        "x := 0.
+         x = 1 when 1.
+         x."
+        /1.
+    
+    /run_test/"Test 12: When False"/
+        "x := 0.
+         x = 1 when 0.
+         x."
+        /0.
+    
+    /run_test/"Test 13: Unless True"/
+        "x := 0.
+         x = 1 unless 0.
+         x."
+        /1.
+    
+    /run_test/"Test 13: Unless False"/
+        "x := 0.
+         x = 1 unless 1.
+         x."
+        /0.
+
+    // ========================================
+    // Loops
+    // ========================================
+
+    /run_test/"Test 14: Simple Loop Break"/
+        "loop >
+             >>.
+         <.
+         1."
+        /1.
+    
+    /run_test/"Test 15: Loop Break"/
+        "x := 0.
+         loop >
+             x = x + 1.
+             >> when x == 5.
+         <.
+         x."
+        /5.
+    
+    /run_test/"Test 16: For Loop"/
+        "x := 0.
+         for i in 1..5 >
+             x = x + i.
+         <.
+         x."
+        /15.
+
+    /run_test/"Test 17: For Loop Break"/
+        "x := 0.
+         for i in 1..10 >
+             x = x + 1.
+             >> when i == 5.
+         <.
+         x."
+        /5.
+
+    // ========================================
+    // Functions
+    // ========================================
+
+    /run_test/"Test 18: Simple Function"/
+        "#add(a, b) >
+             << a + b.
+         <
+         /add/1/2."
+        /3.
+
+    /run_test/"Test 19: Function Local"/
+        "#double(x) >
+             y := x * 2.
+             << y.
+         <
+         /double/5."
+        /10.
+
+    /run_test/"Test 20: Nested Calls"/
+        "#inc(x) >
+             << x + 1.
+         <
+         #double(x) >
+             << x * 2.
+         <
+         y := /inc/3.
+         /double/y."
+        /8.
+
+    // ========================================
+    // Pattern Matching
+    // ========================================
+
+    /run_test/"Test 21: Simple Match"/
+        "x := 2.
+         x | >
+             1 => 10
+             2 => 20
+             _ => 0
+         <."
+        /20.
+
+    /run_test/"Test 22: Match Wildcard"/
+        "x := 99.
+         x | >
+             1 => 10
+             _ => 42
+         <."
+        /42.
+
+    /run_test/"Test 23: Match First"/
+        "1 | >
+             1 => 100
+             _ => 0
+         <."
+        /100.
+
+    // ========================================
+    // Arrays
+    // ========================================
+
+    /run_test/"Test 24: Array Literal"/
+        "arr := [10, 20, 30].
+         arr[0]."
+        /10.
+
+    /run_test/"Test 25: Array Index"/
+        "arr := [1, 2, 3, 4, 5].
+         arr[2]."
+        /3.
+
+    /run_test/"Test 26: Array Sum"/
+        "arr := [1, 2, 3, 4, 5].
+         sum := 0.
+         for i in 0..4 >
+             sum = sum + arr[i].
+         <.
+         sum."
+        /15.
+
+    /run_test/"Test 27: Nested Array Access"/
+        "arr := [10, 20, 30].
+         idx := 1.
+         arr[idx] + arr[idx + 1]."
+        /50.
+
+    // ========================================
+    // Objects
+    // ========================================
+
+    /run_test/"Test 28: Object Literal"/
+        "obj := { x: 10, y: 20 }.
+         obj->x."
+        /10.
+
+    /run_test/"Test 29: Object Property"/
+        "obj := { a: 5, b: 7 }.
+         obj->a + obj->b."
+        /12.
+
+    /run_test/"Test 30: Nested Object"/
+        "point := { x: 3, y: 4 }.
+         result := point->x * point->x + point->y * point->y.
+         result."
+        /25.
+
+    /run_test/"Test 31: Object in Array"/
+        "items := [{ val: 10 }, { val: 20 }].
+         items[0]->val + items[1]->val."
+        /30.
+
+    // ========================================
+    // Conditionals (if-else expressions)
+    // ========================================
+
+    /run_test/"Test 32: If True"/
+        "10 if 1 else 20."
+        /10.
+
+    /run_test/"Test 33: If False"/
+        "10 if 0 else 20."
+        /20.
+
+    /run_test/"Test 34: If Comparison"/
+        "x := 5.
+         100 if x gt 3 else 0."
+        /100.
+
+    // ========================================
+    // Lambdas
+    // ========================================
+
+    /run_test/"Test 35: Lambda"/
+        "add := \(x, y) => x + y.
+         /add/3/4."
+        /7.
+
+    /run_test/"Test 36: Lambda Closure"/
+        "multiplier := 10.
+         scale := \(x) => x * multiplier.
+         /scale/5."
+        /50.
+
+    /console_log/"Tests Complete.".
+    << 0.
+<

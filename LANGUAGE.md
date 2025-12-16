@@ -215,6 +215,16 @@ Anonymous functions:
 \(a, b) => a + b.
 ```
 
+Lambdas now also support block bodies:
+
+```
+\(x) >
+    y := x * 2.
+    << y + 1.
+<
+```
+```
+
 Lambdas are most useful when piped:
 
 ```
@@ -370,6 +380,23 @@ MAX_HP := 100.
     << 0.
 <
 ```
+
+---
+
+## Modules
+
+Import other source files using the `@use` directive at the top of your file:
+
+```
+@use "math.nh".
+@use "utils.nh".
+
+#main() >
+    /utils_func/.
+<
+```
+
+The string must be a path relative to the current file.
 
 ---
 

@@ -1,0 +1,613 @@
+// Parser module - all parse_* functions
+// Requires: lexer.nh (for TOK_* constants), ast.nh (for AST constructors)
+
+#peek(tokens, pos) >
+    << /ds_list_get/tokens/pos.
+<
+
+#parse_paren(tokens, pos) >
+    res := /parse_expr/tokens/(pos + 1).
+    // Expect RPAREN
+    end := res->end.
+    rparen := /peek/tokens/end.
+    end = (rparen->type == 12) | > 1 => end + 1 0 => end <.
+    << { node: res->node, end: end }.
+<
+
+#parse_array(tokens, pos) >
+    pos = pos + 1. // Skip [
+    
+    elements := /ds_list_create/.
+    loop >
+        tok := /peek/tokens/pos.
+        >> when tok->type == TOK_RBRACKET.
+        
+        elem_res := /parse_expr/tokens/pos.
+        /ds_list_push/elements/elem_res->node.
+        pos = elem_res->end.
+        
+        // Check for comma
+        tok = /peek/tokens/pos.
+        pos = pos + 1 when tok->type == TOK_COMMA.
+    <
+    
+    // Skip ]
+    pos = pos + 1.
+    << { node: /arr_lit/elements, end: pos }.
+<
+
+#parse_object(tokens, pos) >
+    pos = pos + 1. // Skip {
+    
+    fields := /ds_list_create/.
+    loop >
+        tok := /peek/tokens/pos.
+        >> when tok->type == TOK_RBRACE.
+        
+        // Get key (must be identifier)
+        key := tok->value.
+        pos = pos + 1.
+        
+        // Expect :
+        pos = pos + 1.
+        
+        // Parse value
+        val_res := /parse_expr/tokens/pos.
+        pos = val_res->end.
+        
+        /ds_list_push/fields/(/obj_field/key/val_res->node).
+        
+        // Check for comma
+        tok = /peek/tokens/pos.
+        pos = pos + 1 when tok->type == TOK_COMMA.
+    <
+    
+    // Skip }
+    pos = pos + 1.
+    << { node: /obj_lit/fields, end: pos }.
+<
+
+// Lambda: \(x, y) => body
+#parse_lambda(tokens, pos) >
+    pos = pos + 2. // Skip \ and (
+    
+    // Parse parameters
+    params := /ds_list_create/.
+    loop >
+        tok := /peek/tokens/pos.
+        >> when tok->type == TOK_RPAREN.
+        
+        // Get param name
+        /ds_list_push/params/tok->value.
+        pos = pos + 1.
+        
+        // Check for comma
+        tok = /peek/tokens/pos.
+        pos = pos + 1 when tok->type == TOK_COMMA.
+    <
+    
+    // Skip )
+    pos = pos + 1.
+    
+    // Expect =>
+    pos = pos + 1.
+    
+    // Parse body expression
+    body_res := /parse_expr/tokens/pos.
+    
+    << { node: /lambda_expr/params/body_res->node, end: body_res->end }.
+<
+
+#parse_primary_base(tokens, pos) >
+    tok := /peek/tokens/pos.
+    << tok->type | >
+        1 => // INT
+            { node: /lit/tok->value, end: pos + 1 }
+        2 => // IDENT
+            { node: /var/tok->value, end: pos + 1 }
+        11 => /parse_paren/tokens/pos // LPAREN
+        21 => // TOK_NOT
+            /parse_not/tokens/pos
+        6 => // TOK_SLASH - function call in expression context
+            /parse_call_expr/tokens/pos
+        38 => // TOK_UNDER - wildcard
+            { node: /wildcard/, end: pos + 1 }
+        39 => // TOK_STRING
+            { node: /str_lit/tok->value, end: pos + 1 }
+        40 => // TOK_LBRACKET - array literal
+            /parse_array/tokens/pos
+        42 => // TOK_LBRACE - object literal
+            /parse_object/tokens/pos
+        46 => // TOK_BACKSLASH - lambda
+            /parse_lambda/tokens/pos
+        _ => { node: /lit/0, end: pos } // Error
+    <.
+<
+
+// Handle postfix: expr[index] and expr->key
+#parse_primary(tokens, pos) >
+    res := /parse_primary_base/tokens/pos.
+    pos = res->end.
+    node := res->node.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        
+        // Handle [ (index)
+        is_index := tok->type == TOK_LBRACKET.
+        << /parse_index_rest/tokens/pos/node when is_index.
+        
+        // Handle -> (property access)
+        is_prop := tok->type == TOK_PROPACCESS.
+        << /parse_prop_rest/tokens/pos/node when is_prop.
+        
+        // Neither, exit loop
+        >> when 1.
+    <
+    
+    << { node: node, end: pos }.
+<
+
+#parse_index_rest(tokens, pos, node) >
+    pos = pos + 1. // Skip [
+    idx_res := /parse_expr/tokens/pos.
+    pos = idx_res->end.
+    pos = pos + 1. // Skip ]
+    new_node := /index_op/node/idx_res->node.
+    << /parse_primary_postfix/tokens/pos/new_node.
+<
+
+#parse_prop_rest(tokens, pos, node) >
+    pos = pos + 1. // Skip ->
+    key_tok := /peek/tokens/pos.
+    key := key_tok->value.
+    pos = pos + 1.
+    new_node := /prop_op/node/key.
+    << /parse_primary_postfix/tokens/pos/new_node.
+<
+
+#parse_primary_postfix(tokens, pos, node) >
+    tok := /peek/tokens/pos.
+    
+    // Handle [ (index)
+    << /parse_index_rest/tokens/pos/node when tok->type == TOK_LBRACKET.
+    
+    // Handle -> (property access)
+    << /parse_prop_rest/tokens/pos/node when tok->type == TOK_PROPACCESS.
+    
+    // No more postfix operators
+    << { node: node, end: pos }.
+<
+
+
+
+
+
+#parse_not(tokens, pos) >
+    pos = pos + 1. // Skip not
+    res := /parse_primary/tokens/pos.
+    << { node: /not_op/res->node, end: res->end }.
+<
+
+#parse_factor(tokens, pos) >
+    left_res := /parse_primary/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == TOK_STAR or type == TOK_SLASH or type == TOK_PERCENT).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /parse_primary/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            5 => /mul/left/right
+            6 => /div/left/right
+            7 => /mod/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#parse_term(tokens, pos) >
+    left_res := /parse_factor/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == TOK_PLUS or type == TOK_MINUS).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /parse_factor/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            3 => /add/left/right
+            4 => /sub/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#parse_comp(tokens, pos) >
+    left_res := /parse_term/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        type := tok->type.
+        is_op := (type ge TOK_LT and type le TOK_NE).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /parse_term/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            13 => /lt_op/left/right
+            14 => /gt_op/left/right
+            15 => /le_op/left/right
+            16 => /ge_op/left/right
+            17 => /eq_op/left/right
+            18 => /ne_op/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#parse_logic(tokens, pos) >
+    left_res := /parse_comp/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == TOK_AND or type == TOK_OR).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /parse_comp/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            19 => /and_op/left/right
+            20 => /or_op/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#parse_if_rest(tokens, pos, left) >
+    // Parse condition
+    cond_res := /parse_logic/tokens/(pos + 1).
+    // Expect ELSE
+    else_pos := cond_res->end.
+    else_tok := /peek/tokens/else_pos.
+    
+    else_res := (else_tok->type == TOK_ELSE) | >
+        1 => /parse_logic/tokens/(else_pos + 1)
+        0 => { node: /lit/0, end: else_pos }
+    <.
+    
+    << { node: /if_expr/cond_res->node/left/else_res->node, end: else_res->end }.
+<
+
+#parse_match(tokens, pos, left) >
+    // pos is at |, left is the value to match
+    pos = pos + 1. // Skip |
+    pos = pos + 1. // Skip >
+    
+    arms := /ds_list_create/.
+    loop >
+        tok := /peek/tokens/pos.
+        // Check for < (TOK_SCOPE_OUT)
+        >> when tok->type == TOK_SCOPE_OUT.
+        
+        // Parse pattern (literal or wildcard)
+        pattern_res := /parse_primary/tokens/pos.
+        pos = pattern_res->end.
+        
+        // Expect =>
+        pos = pos + 1.
+        
+        // Parse body expression
+        body_res := /parse_logic/tokens/pos.
+        pos = body_res->end.
+        
+        /ds_list_push/arms/(/match_arm/pattern_res->node/body_res->node).
+    <
+    
+    // Skip <
+    pos = pos + 1.
+    << { node: /match_expr/left/arms, end: pos }.
+<
+
+#parse_match_expr(tokens, pos) >
+    left_res := /parse_logic/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    tok := /peek/tokens/pos.
+    << tok->type | >
+        TOK_PIPE => /parse_match/tokens/pos/left
+        TOK_IF => /parse_if_rest/tokens/pos/left
+        _ => left_res
+    <.
+<
+
+#parse_expr(tokens, pos) >
+    << /parse_match_expr/tokens/pos.
+<
+
+#parse_stmt_assign(tokens, pos, tok) >
+    name := tok->value.
+    res := /parse_expr/tokens/(pos + 2).
+    // Expect DOT
+    dot := /peek/tokens/res->end.
+    end := (dot->type == TOK_DOT) | >
+        1 => res->end + 1
+        0 => res->end
+    <.
+    
+    << { node: /decl/name/res->node, end: end }.
+<
+
+#parse_stmt_expr_stmt(tokens, pos) >
+    res := /parse_expr/tokens/pos.
+    // Expect DOT
+    dot := /peek/tokens/res->end.
+    end := (dot->type == TOK_DOT) | >
+        1 => res->end + 1
+        0 => res->end
+    <.
+    << { node: res->node, end: end }.
+<
+
+#parse_stmt_ident(tokens, pos, tok) >
+    next := /peek/tokens/(pos + 1).
+    << next->type | >
+        8 => /parse_stmt_assign/tokens/pos/tok
+        _ => /parse_stmt_expr_stmt/tokens/pos
+    <.
+<
+
+#parse_block(tokens, pos) >
+    prog := 0.
+    loop >
+        tok := /peek/tokens/pos.
+        // Check for < (TOK_SCOPE_OUT)
+        >> when tok->type == TOK_SCOPE_OUT.
+        >> when tok->type == TOK_EOF.
+        
+        res := /parse_stmt/tokens/pos.
+        pos = res->end.
+        
+        prog = (prog == 0) | >
+            1 => res->node
+            0 => /seq/prog/res->node
+        <.
+    <
+    
+    // Skip <
+    pos = pos + 1.
+    << { node: prog, end: pos }.
+<
+
+#parse_loop(tokens, pos) >
+    // Expect loop > ... <
+    pos = pos + 1. // Skip loop
+    // Expect > (TOK_SCOPE_IN)
+    pos = pos + 1.
+    
+    body := /parse_block/tokens/pos.
+    << { node: /loop_stmt/body->node, end: body->end }.
+<
+
+#parse_modifier(tokens, res, type) >
+    pos := res->end + 1. // Skip when/unless
+    cond_res := /parse_expr/tokens/pos.
+    
+    cond := cond_res->node.
+    cond = (type == TOK_UNLESS) | >
+        true => /not_op/cond
+        false => cond
+    <.
+    
+    << { node: /when_stmt/res->node/cond, end: cond_res->end }.
+<
+
+#parse_for(tokens, pos) >
+    // Expect for x in start..end > ... <
+    pos = pos + 1. // Skip for
+    
+    // Expect IDENT
+    tok := /peek/tokens/pos.
+    var := tok->value.
+    pos = pos + 1.
+    
+    // Expect IN
+    pos = pos + 1.
+    
+    // Expect start
+    start_res := /parse_expr/tokens/pos.
+    pos = start_res->end.
+    start := start_res->node.
+    
+    // Expect .. (TOK_RANGE)
+    pos = pos + 1.
+    
+    // Expect end
+    end_res := /parse_expr/tokens/pos.
+    pos = end_res->end.
+    end := end_res->node.
+    
+    // Expect > (TOK_SCOPE_IN)
+    pos = pos + 1.
+    
+    body := /parse_block/tokens/pos.
+    << { node: /for_stmt/var/start/end/body->node, end: body->end }.
+<
+
+// Parse function definition: #name(param1, param2) > body <
+#parse_func(tokens, pos) >
+    pos = pos + 1. // Skip #
+    
+    // Get function name
+    tok := /peek/tokens/pos.
+    name := tok->value.
+    pos = pos + 1.
+    
+    // Expect (
+    pos = pos + 1.
+    
+    // Parse parameters
+    params := /ds_list_create/.
+    loop >
+        tok = /peek/tokens/pos.
+        >> when tok->type == TOK_RPAREN.
+        
+        // Get param name
+        /ds_list_push/params/tok->value.
+        pos = pos + 1.
+        
+        // Check for comma
+        tok = /peek/tokens/pos.
+        pos = pos + 1 when tok->type == TOK_COMMA.
+    <
+    
+    // Skip )
+    pos = pos + 1.
+    
+    // Expect > (TOK_SCOPE_IN)
+    pos = pos + 1.
+    
+    // Parse body
+    body := /parse_block/tokens/pos.
+    
+    << { node: /func_def/name/params/body->node, end: body->end }.
+<
+
+// Parse function call: /name/arg1/arg2
+#parse_call(tokens, pos) >
+    pos = pos + 1. // Skip first /
+    
+    // Get function name
+    tok := /peek/tokens/pos.
+    name := tok->value.
+    pos = pos + 1.
+    
+    // Parse arguments (each preceded by /)
+    args := /ds_list_create/.
+    loop >
+        tok = /peek/tokens/pos.
+        >> when tok->type != TOK_SLASH.
+        
+        pos = pos + 1. // Skip /
+        
+        // Parse argument expression
+        arg_res := /parse_primary/tokens/pos.
+        /ds_list_push/args/arg_res->node.
+        pos = arg_res->end.
+    <
+    
+    // Consume trailing .
+    dot := /peek/tokens/pos.
+    pos = pos + 1 when dot->type == TOK_DOT.
+    
+    << { node: /func_call/name/args, end: pos }.
+<
+
+// Parse function call in expression context (no trailing dot)
+#parse_call_expr(tokens, pos) >
+    pos = pos + 1. // Skip first /
+
+    // Get function name
+    tok := /peek/tokens/pos.
+    name := tok->value.
+    pos = pos + 1.
+
+    // Parse arguments (each preceded by /)
+    args := /ds_list_create/.
+    loop >
+        tok = /peek/tokens/pos.
+        >> when tok->type != TOK_SLASH.
+
+        pos = pos + 1. // Skip /
+
+        // Parse argument expression
+        arg_res := /parse_primary/tokens/pos.
+        /ds_list_push/args/arg_res->node.
+        pos = arg_res->end.
+    <
+
+    // Don't consume trailing . in expression context
+    << { node: /func_call/name/args, end: pos }.
+<
+
+// Parse return: << expr
+#parse_return(tokens, pos) >
+    pos = pos + 1. // Skip <<
+    
+    res := /parse_expr/tokens/pos.
+    << { node: /return_stmt/res->node, end: res->end }.
+<
+
+#parse_stmt(tokens, pos) >
+    tok := /peek/tokens/pos.
+    
+    res := tok->type | >
+        TOK_LOOP => /parse_loop/tokens/pos
+        TOK_FOR => /parse_for/tokens/pos
+        TOK_BREAK => { node: /break_stmt/, end: pos + 1 }
+        TOK_HASH => /parse_func/tokens/pos
+        TOK_RETURN => /parse_return/tokens/pos
+        TOK_SLASH => /parse_call/tokens/pos
+        TOK_IDENT => /parse_stmt_ident/tokens/pos/tok
+        _ => /parse_stmt_expr_stmt/tokens/pos
+    <.
+    
+    // Check for trailing modifiers
+    next := /peek/tokens/res->end.
+    << next->type | >
+        TOK_WHEN => /parse_modifier/tokens/res/TOK_WHEN
+        TOK_UNLESS => /parse_modifier/tokens/res/TOK_UNLESS
+        _ => res
+    <.
+<
+
+#parse_program(tokens) >
+    pos := 0.
+    prog := 0.
+    
+    loop >
+        tok := /peek/tokens/pos.
+        >> when tok->type == TOK_EOF.
+        
+        res := /parse_stmt/tokens/pos.
+        pos = res->end.
+        
+        prog = (prog == 0) | >
+            1 => res->node
+            0 => /seq/prog/res->node
+        <.
+    <
+    
+    << prog.
+<

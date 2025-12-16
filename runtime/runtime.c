@@ -1,567 +1,704 @@
+#define GL_GLEXT_PROTOTYPES
 #include "runtime.h"
+#include <GL/glut.h>
+#include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#include <emscripten/html5.h>
-#include <GLES3/gl3.h>
-#endif
+#include <time.h>
 
 // ============================================================================
-// Internal State
+// IO
 // ============================================================================
 
-static uint32_t rng_state = 12345;
+void text_write(const char *str) { printf("%s", str); }
+
+void text_write_int(Value val) { printf("%ld", val); }
+
+Value time_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (Value)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+// ============================================================================
+// Object System Implementation
+// ============================================================================
+
+#define MAX_OBJECTS 65536
+#define MAX_PROPS 64
+
+typedef struct {
+  char *key;
+  Value value;
+} Property;
+
+typedef struct {
+  Property props[MAX_PROPS];
+  int prop_count;
+  int in_use;
+} Object;
+
+static Object objects[MAX_OBJECTS];
+static int objects_initialized = 0;
+
+static void init_objects(void) {
+  if (objects_initialized)
+    return;
+  memset(objects, 0, sizeof(objects));
+  objects_initialized = 1;
+}
+
+static Value alloc_object(void) {
+  init_objects();
+  for (int i = 1; i < MAX_OBJECTS; i++) {
+    if (!objects[i].in_use) {
+      objects[i].in_use = 1;
+      objects[i].prop_count = 0;
+      return i;
+    }
+  }
+  return 0;
+}
+
+Value ds_object_create(int count, ...) {
+  Value handle = alloc_object();
+  if (handle == 0)
+    return 0;
+
+  va_list args;
+  va_start(args, count);
+
+  for (int i = 0; i < count; i++) {
+    const char *key = va_arg(args, const char *);
+    Value val = va_arg(args, Value);
+    ds_object_set(&handle, key, val);
+  }
+
+  va_end(args);
+  return handle;
+}
+
+Value ds_object_get(Value obj, const char *key) {
+  if (obj <= 0 || obj >= MAX_OBJECTS)
+    return 0;
+  if (!objects[obj].in_use)
+    return 0;
+
+  for (int i = 0; i < objects[obj].prop_count; i++) {
+    if (strcmp(objects[obj].props[i].key, key) == 0) {
+      return objects[obj].props[i].value;
+    }
+  }
+  return 0;
+}
+
+void ds_object_set(Value *obj, const char *key, Value value) {
+  Value handle = *obj;
+  if (handle <= 0 || handle >= MAX_OBJECTS) {
+    // Auto-allocate if null
+    handle = alloc_object();
+    *obj = handle;
+  }
+
+  if (!objects[handle].in_use)
+    return;
+
+  // Update existing
+  for (int i = 0; i < objects[handle].prop_count; i++) {
+    if (strcmp(objects[handle].props[i].key, key) == 0) {
+      objects[handle].props[i].value = value;
+      return;
+    }
+  }
+
+  // Add new
+  if (objects[handle].prop_count < MAX_PROPS) {
+    int idx = objects[handle].prop_count++;
+    objects[handle].props[idx].key = strdup(key);
+    objects[handle].props[idx].value = value;
+  }
+}
+
+void ds_set_prop(Value obj, Value key_val, Value value) {
+  const char *key = (const char *)key_val;
+  if (obj <= 0 || obj >= MAX_OBJECTS)
+    return;
+
+  // Reuse ds_object_set logic or call it?
+  // We can't pass address of local variable obj to ds_object_set because it
+  // might update it, but we want to update the object referred to by obj.
+  // Actually ds_object_set updates the HANDLE if it was 0.
+  // Here obj is already a handle.
+  // So we can just cast address.
+  ds_object_set(&obj, key, value);
+}
+
+Value ds_strlen(Value str_val) {
+  const char *str = (const char *)str_val;
+  if (!str)
+    return 0;
+  return (Value)strlen(str);
+}
+Value ds_streq(Value s1_val, Value s2_val) {
+  const char *s1 = (const char *)s1_val;
+  const char *s2 = (const char *)s2_val;
+  if (!s1 || !s2)
+    return 0;
+  return strcmp(s1, s2) == 0;
+}
+
+Value ds_div(Value a, Value b) {
+  if (b == 0)
+    return 0;
+  return a / b;
+}
+
+Value ds_mod(Value a, Value b) {
+  if (b == 0)
+    return 0;
+  return a % b;
+}
+Value ds_substring(Value str_val, Value start, Value len) {
+  const char *str = (const char *)str_val;
+  if (!str || len <= 0)
+    return 0;
+  char *sub = malloc(len + 1);
+  strncpy(sub, str + start, len);
+  sub[len] = '\0';
+  return (Value)sub; // Leaks memory, but fine for this demo
+}
+
+Value ds_string_at(Value str_val, Value index) {
+  const char *str = (const char *)str_val;
+  if (!str)
+    return 0;
+  if (index < 0 || index >= (Value)strlen(str))
+    return 0;
+  return (Value)str[index];
+}
+
+// ============================================================================
+// List System Implementation
+// ============================================================================
+
+#define MAX_LISTS 65536
+
+typedef struct {
+  Value *items;
+  int count;
+  int capacity;
+  int in_use;
+} List;
+
+static List lists[MAX_LISTS];
+static int lists_initialized = 0;
+
+static void init_lists(void) {
+  if (lists_initialized)
+    return;
+  memset(lists, 0, sizeof(lists));
+  lists_initialized = 1;
+}
+
+Value ds_list_create(void) {
+  init_lists();
+  for (int i = 1; i < MAX_LISTS; i++) {
+    if (!lists[i].in_use) {
+      lists[i].in_use = 1;
+      lists[i].count = 0;
+      lists[i].capacity = 16;
+      lists[i].items = (Value *)malloc(lists[i].capacity * sizeof(Value));
+      return i;
+    }
+  }
+  return 0;
+}
+
+Value ds_list_push(Value list, Value value) {
+  if (list <= 0 || list >= MAX_LISTS)
+    return 0;
+  if (!lists[list].in_use)
+    return 0;
+
+  if (lists[list].count >= lists[list].capacity) {
+    lists[list].capacity *= 2;
+    lists[list].items = (Value *)realloc(lists[list].items,
+                                         lists[list].capacity * sizeof(Value));
+  }
+  lists[list].items[lists[list].count++] = value;
+  return 0;
+}
+
+Value ds_list_get(Value list, Value index) {
+  if (list <= 0 || list >= MAX_LISTS)
+    return 0;
+  if (!lists[list].in_use)
+    return 0;
+  if (index < 0 || index >= lists[list].count)
+    return 0;
+
+  return lists[list].items[index];
+}
+
+Value ds_list_len(Value list) {
+  if (list <= 0 || list >= MAX_LISTS)
+    return 0;
+  if (!lists[list].in_use)
+    return 0;
+  return lists[list].count;
+}
+
+// ============================================================================
+// GL Context
+// ============================================================================
+
 static int gl_initialized = 0;
 
-#define MAX_KEYS 16
-static int key_states[MAX_KEYS] = {0};
-static int key_just_pressed[MAX_KEYS] = {0};
+static void ensure_gl_context(void) {
+  if (!gl_initialized) {
+    int argc = 1;
+    char *argv[] = {"dungeon", NULL};
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
+    glutInitWindowSize(800, 600);
+    glutCreateWindow("Dungeon");
+    gl_initialized = 1;
 
-// Buffer management for float arrays
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, 800, 600, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+  }
+}
+
+// ============================================================================
+// GL Bindings
+// ============================================================================
+
+void gl_color(Value r, Value g, Value b, Value a) {
+  ensure_gl_context();
+  glColor4f(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+}
+
+void gl_begin(Value mode) {
+  ensure_gl_context();
+  glBegin((GLenum)mode);
+}
+
+void gl_end(void) {
+  ensure_gl_context();
+  glEnd();
+}
+
+void gl_vertex(Value x, Value y) {
+  ensure_gl_context();
+  glVertex2f((float)x, (float)y);
+}
+
+void gl_flush(void) {
+  if (gl_initialized) {
+    glFlush();
+  }
+}
+
+Value gl_create_shader(Value type) {
+  ensure_gl_context();
+  return (Value)glCreateShader((GLenum)type);
+}
+
+Value gl_shader_source_compile(Value shader, const char *source) {
+  ensure_gl_context();
+  glShaderSource((GLuint)shader, 1, &source, NULL);
+  glCompileShader((GLuint)shader);
+
+  GLint success;
+  glGetShaderiv((GLuint)shader, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    char infoLog[512];
+    glGetShaderInfoLog((GLuint)shader, 512, NULL, infoLog);
+    printf("Shader compilation failed: %s\n", infoLog);
+    return 0;
+  }
+  return 1;
+}
+
+Value gl_create_program(void) {
+  ensure_gl_context();
+  return (Value)glCreateProgram();
+}
+
+void gl_attach_shader(Value program, Value shader) {
+  ensure_gl_context();
+  glAttachShader((GLuint)program, (GLuint)shader);
+}
+
+Value gl_link_program(Value program) {
+  ensure_gl_context();
+  glLinkProgram((GLuint)program);
+
+  GLint success;
+  glGetProgramiv((GLuint)program, GL_LINK_STATUS, &success);
+  if (!success) {
+    char infoLog[512];
+    glGetProgramInfoLog((GLuint)program, 512, NULL, infoLog);
+    printf("Program linking failed: %s\n", infoLog);
+    return 0;
+  }
+  return 1;
+}
+
+void gl_use_program(Value program) {
+  ensure_gl_context();
+  glUseProgram((GLuint)program);
+}
+
+void gl_delete_shader(Value shader) {
+  ensure_gl_context();
+  glDeleteShader((GLuint)shader);
+}
+
+Value gl_get_uniform_location(Value program, const char *name) {
+  ensure_gl_context();
+  return (Value)glGetUniformLocation((GLuint)program, name);
+}
+
+void gl_uniform1i(Value location, Value v0) {
+  ensure_gl_context();
+  glUniform1i((GLint)location, (GLint)v0);
+}
+
+void gl_uniform1f(Value location, float v0) {
+  ensure_gl_context();
+  glUniform1f((GLint)location, v0);
+}
+
+void gl_uniform2f(Value location, float v0, float v1) {
+  ensure_gl_context();
+  glUniform2f((GLint)location, v0, v1);
+}
+
+void gl_uniform3f(Value location, float v0, float v1, float v2) {
+  ensure_gl_context();
+  glUniform3f((GLint)location, v0, v1, v2);
+}
+
+void gl_uniform4f(Value location, float v0, float v1, float v2, float v3) {
+  ensure_gl_context();
+  glUniform4f((GLint)location, v0, v1, v2, v3);
+}
+
+Value gl_create_buffer(void) {
+  ensure_gl_context();
+  GLuint buffer;
+  glGenBuffers(1, &buffer);
+  return (Value)buffer;
+}
+
+void gl_bind_buffer(Value target, Value buffer) {
+  ensure_gl_context();
+  glBindBuffer((GLenum)target, (GLuint)buffer);
+}
+
+void gl_delete_buffer(Value buffer) {
+  ensure_gl_context();
+  GLuint buf = (GLuint)buffer;
+  glDeleteBuffers(1, &buf);
+}
+
+Value gl_create_vertex_array(void) {
+  ensure_gl_context();
+  GLuint vao;
+  glGenVertexArrays(1, &vao);
+  return (Value)vao;
+}
+
+void gl_bind_vertex_array(Value vao) {
+  ensure_gl_context();
+  glBindVertexArray((GLuint)vao);
+}
+
+void gl_delete_vertex_array(Value vao) {
+  ensure_gl_context();
+  GLuint v = (GLuint)vao;
+  glDeleteVertexArrays(1, &v);
+}
+
+Value gl_get_attrib_location(Value program, const char *name) {
+  ensure_gl_context();
+  return (Value)glGetAttribLocation((GLuint)program, name);
+}
+
+void gl_enable_vertex_attrib_array(Value index) {
+  ensure_gl_context();
+  glEnableVertexAttribArray((GLuint)index);
+}
+
+void gl_disable_vertex_attrib_array(Value index) {
+  ensure_gl_context();
+  glDisableVertexAttribArray((GLuint)index);
+}
+
+void gl_vertex_attrib_pointer(Value index, Value size, Value type,
+                              Value normalized, Value stride, Value offset) {
+  ensure_gl_context();
+  glVertexAttribPointer((GLuint)index, (GLint)size, (GLenum)type,
+                        (GLboolean)normalized, (GLsizei)stride,
+                        (const void *)offset);
+}
+
+void gl_clear(Value mask) {
+  ensure_gl_context();
+  glClear((GLbitfield)mask);
+}
+
+void gl_clear_color(float r, float g, float b, float a) {
+  ensure_gl_context();
+  glClearColor(r, g, b, a);
+}
+
+void gl_viewport(Value x, Value y, Value width, Value height) {
+  ensure_gl_context();
+  glViewport((GLint)x, (GLint)y, (GLsizei)width, (GLsizei)height);
+}
+
+void gl_enable(Value cap) {
+  ensure_gl_context();
+  glEnable((GLenum)cap);
+}
+
+void gl_disable(Value cap) {
+  ensure_gl_context();
+  glDisable((GLenum)cap);
+}
+
+void gl_blend_func(Value sfactor, Value dfactor) {
+  ensure_gl_context();
+  glBlendFunc((GLenum)sfactor, (GLenum)dfactor);
+}
+
+void gl_draw_arrays(Value mode, Value first, Value count) {
+  ensure_gl_context();
+  glDrawArrays((GLenum)mode, (GLint)first, (GLsizei)count);
+}
+
+void gl_draw_elements(Value mode, Value count, Value type, Value offset) {
+  ensure_gl_context();
+  glDrawElements((GLenum)mode, (GLsizei)count, (GLenum)type,
+                 (const void *)offset);
+}
+
+// ============================================================================
+// Float Buffers
+// ============================================================================
+
 #define MAX_FLOAT_BUFFERS 64
 #define MAX_BUFFER_SIZE 65536
 
 typedef struct {
-    float *data;
-    int count;
-    int in_use;
+  float *data;
+  int count;
+  int in_use;
 } FloatBuffer;
 
-static FloatBuffer float_buffers[MAX_FLOAT_BUFFERS] = {0};
+static FloatBuffer float_buffers[MAX_FLOAT_BUFFERS];
 
-// ============================================================================
-// GL Context Initialization
-// ============================================================================
-
-static void ensure_gl_context(void) {
-#ifdef __EMSCRIPTEN__
-    if (gl_initialized) return;
-    
-    EmscriptenWebGLContextAttributes attrs;
-    emscripten_webgl_init_context_attributes(&attrs);
-    attrs.majorVersion = 2;
-    attrs.minorVersion = 0;
-    attrs.alpha = 0;
-    attrs.depth = 1;
-    attrs.stencil = 0;
-    attrs.antialias = 1;
-    attrs.premultipliedAlpha = 0;
-    attrs.preserveDrawingBuffer = 0;
-    attrs.powerPreference = EM_WEBGL_POWER_PREFERENCE_DEFAULT;
-    attrs.failIfMajorPerformanceCaveat = 0;
-    
-    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE ctx = emscripten_webgl_create_context("#canvas", &attrs);
-    if (ctx <= 0) {
-        EM_ASM({
-            console.error("Failed to create WebGL2 context:", $0);
-        }, ctx);
-        return;
-    }
-    
-    EMSCRIPTEN_RESULT res = emscripten_webgl_make_context_current(ctx);
-    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
-        EM_ASM({
-            console.error("Failed to make WebGL context current:", $0);
-        }, res);
-        return;
-    }
-    
-    gl_initialized = 1;
-    EM_ASM({
-        console.log("[nh] WebGL2 context created successfully");
-    });
-#endif
-}
-
-// ============================================================================
-// GL Shader Operations
-// ============================================================================
-
-int gl_create_shader(int type) {
-#ifdef __EMSCRIPTEN__
-    ensure_gl_context();
-    return (int)glCreateShader((GLenum)type);
-#else
+Value buf_create_floats(Value count) {
+  if (count <= 0 || count > MAX_BUFFER_SIZE)
     return 0;
-#endif
-}
 
-int gl_shader_source_compile(int shader, const char *source) {
-#ifdef __EMSCRIPTEN__
-    glShaderSource((GLuint)shader, 1, &source, NULL);
-    glCompileShader((GLuint)shader);
-    
-    GLint success;
-    glGetShaderiv((GLuint)shader, GL_COMPILE_STATUS, &success);
-    
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog((GLuint)shader, 512, NULL, log);
-        EM_ASM({
-            console.error("Shader compile error:", UTF8ToString($0));
-        }, log);
-        return 0;
+  for (int i = 1; i < MAX_FLOAT_BUFFERS; i++) {
+    if (!float_buffers[i].in_use) {
+      float_buffers[i].in_use = 1;
+      float_buffers[i].count = count;
+      float_buffers[i].data = (float *)malloc(count * sizeof(float));
+      return i;
     }
-    return 1;
-#else
-    (void)shader; (void)source;
-    return 1;
-#endif
+  }
+  return 0;
 }
 
-int gl_create_program(void) {
-#ifdef __EMSCRIPTEN__
-    return (int)glCreateProgram();
-#else
+void buf_set_float(Value buffer, Value index, float value) {
+  if (buffer <= 0 || buffer >= MAX_FLOAT_BUFFERS)
+    return;
+  if (!float_buffers[buffer].in_use)
+    return;
+  if (index < 0 || index >= float_buffers[buffer].count)
+    return;
+
+  float_buffers[buffer].data[index] = value;
+}
+
+void buf_upload(Value target, Value buffer_handle, Value usage) {
+  if (buffer_handle <= 0 || buffer_handle >= MAX_FLOAT_BUFFERS)
+    return;
+  if (!float_buffers[buffer_handle].in_use)
+    return;
+
+  ensure_gl_context();
+  glBufferData((GLenum)target,
+               float_buffers[buffer_handle].count * sizeof(float),
+               float_buffers[buffer_handle].data, (GLenum)usage);
+}
+
+void buf_free(Value buffer_handle) {
+  if (buffer_handle <= 0 || buffer_handle >= MAX_FLOAT_BUFFERS)
+    return;
+  if (!float_buffers[buffer_handle].in_use)
+    return;
+
+  free(float_buffers[buffer_handle].data);
+  float_buffers[buffer_handle].in_use = 0;
+}
+
+// ============================================================================
+// Textures
+// ============================================================================
+
+Value gl_create_texture(void) {
+  ensure_gl_context();
+  GLuint tex;
+  glGenTextures(1, &tex);
+  return (Value)tex;
+}
+
+void gl_bind_texture(Value target, Value texture) {
+  ensure_gl_context();
+  glBindTexture((GLenum)target, (GLuint)texture);
+}
+
+void gl_tex_parameteri(Value target, Value pname, Value param) {
+  ensure_gl_context();
+  glTexParameteri((GLenum)target, (GLenum)pname, (GLint)param);
+}
+
+// ============================================================================
+// Input
+// ============================================================================
+
+static int keys[512];
+static int keys_prev[512];
+
+Value input_key_pressed(Value key) {
+  if (key < 0 || key >= 512)
     return 0;
-#endif
+  return keys[key];
 }
 
-void gl_attach_shader(int program, int shader) {
-#ifdef __EMSCRIPTEN__
-    glAttachShader((GLuint)program, (GLuint)shader);
-#else
-    (void)program; (void)shader;
-#endif
-}
-
-int gl_link_program(int program) {
-#ifdef __EMSCRIPTEN__
-    glLinkProgram((GLuint)program);
-    
-    GLint success;
-    glGetProgramiv((GLuint)program, GL_LINK_STATUS, &success);
-    
-    if (!success) {
-        char log[512];
-        glGetProgramInfoLog((GLuint)program, 512, NULL, log);
-        EM_ASM({
-            console.error("Program link error:", UTF8ToString($0));
-        }, log);
-        return 0;
-    }
-    return 1;
-#else
-    (void)program;
-    return 1;
-#endif
-}
-
-void gl_use_program(int program) {
-#ifdef __EMSCRIPTEN__
-    glUseProgram((GLuint)program);
-#else
-    (void)program;
-#endif
-}
-
-void gl_delete_shader(int shader) {
-#ifdef __EMSCRIPTEN__
-    glDeleteShader((GLuint)shader);
-#else
-    (void)shader;
-#endif
-}
-
-// ============================================================================
-// GL Uniforms
-// ============================================================================
-
-int gl_get_uniform_location(int program, const char *name) {
-#ifdef __EMSCRIPTEN__
-    return (int)glGetUniformLocation((GLuint)program, name);
-#else
-    (void)program; (void)name;
-    return -1;
-#endif
-}
-
-void gl_uniform1i(int location, int v0) {
-#ifdef __EMSCRIPTEN__
-    glUniform1i((GLint)location, v0);
-#else
-    (void)location; (void)v0;
-#endif
-}
-
-void gl_uniform1f(int location, float v0) {
-#ifdef __EMSCRIPTEN__
-    glUniform1f((GLint)location, v0);
-#else
-    (void)location; (void)v0;
-#endif
-}
-
-void gl_uniform2f(int location, float v0, float v1) {
-#ifdef __EMSCRIPTEN__
-    glUniform2f((GLint)location, v0, v1);
-#else
-    (void)location; (void)v0; (void)v1;
-#endif
-}
-
-void gl_uniform3f(int location, float v0, float v1, float v2) {
-#ifdef __EMSCRIPTEN__
-    glUniform3f((GLint)location, v0, v1, v2);
-#else
-    (void)location; (void)v0; (void)v1; (void)v2;
-#endif
-}
-
-void gl_uniform4f(int location, float v0, float v1, float v2, float v3) {
-#ifdef __EMSCRIPTEN__
-    glUniform4f((GLint)location, v0, v1, v2, v3);
-#else
-    (void)location; (void)v0; (void)v1; (void)v2; (void)v3;
-#endif
-}
-
-// ============================================================================
-// GL Buffers
-// ============================================================================
-
-int gl_create_buffer(void) {
-#ifdef __EMSCRIPTEN__
-    GLuint buffer;
-    glGenBuffers(1, &buffer);
-    return (int)buffer;
-#else
+Value input_key_just_pressed(Value key) {
+  if (key < 0 || key >= 512)
     return 0;
-#endif
-}
-
-void gl_bind_buffer(int target, int buffer) {
-#ifdef __EMSCRIPTEN__
-    glBindBuffer((GLenum)target, (GLuint)buffer);
-#else
-    (void)target; (void)buffer;
-#endif
-}
-
-void gl_delete_buffer(int buffer) {
-#ifdef __EMSCRIPTEN__
-    GLuint b = (GLuint)buffer;
-    glDeleteBuffers(1, &b);
-#else
-    (void)buffer;
-#endif
+  return keys[key] && !keys_prev[key];
 }
 
 // ============================================================================
-// GL Vertex Arrays (VAO)
-// ============================================================================
-
-int gl_create_vertex_array(void) {
-#ifdef __EMSCRIPTEN__
-    GLuint vao;
-    glGenVertexArrays(1, &vao);
-    return (int)vao;
-#else
-    return 0;
-#endif
-}
-
-void gl_bind_vertex_array(int vao) {
-#ifdef __EMSCRIPTEN__
-    glBindVertexArray((GLuint)vao);
-#else
-    (void)vao;
-#endif
-}
-
-void gl_delete_vertex_array(int vao) {
-#ifdef __EMSCRIPTEN__
-    GLuint v = (GLuint)vao;
-    glDeleteVertexArrays(1, &v);
-#else
-    (void)vao;
-#endif
-}
-
-// ============================================================================
-// GL Attributes
-// ============================================================================
-
-int gl_get_attrib_location(int program, const char *name) {
-#ifdef __EMSCRIPTEN__
-    return (int)glGetAttribLocation((GLuint)program, name);
-#else
-    (void)program; (void)name;
-    return -1;
-#endif
-}
-
-void gl_enable_vertex_attrib_array(int index) {
-#ifdef __EMSCRIPTEN__
-    glEnableVertexAttribArray((GLuint)index);
-#else
-    (void)index;
-#endif
-}
-
-void gl_disable_vertex_attrib_array(int index) {
-#ifdef __EMSCRIPTEN__
-    glDisableVertexAttribArray((GLuint)index);
-#else
-    (void)index;
-#endif
-}
-
-void gl_vertex_attrib_pointer(int index, int size, int type, int normalized, int stride, int offset) {
-#ifdef __EMSCRIPTEN__
-    glVertexAttribPointer(
-        (GLuint)index,
-        size,
-        (GLenum)type,
-        (GLboolean)normalized,
-        stride,
-        (const void *)(intptr_t)offset
-    );
-#else
-    (void)index; (void)size; (void)type; (void)normalized; (void)stride; (void)offset;
-#endif
-}
-
-// ============================================================================
-// GL Drawing
-// ============================================================================
-
-void gl_clear(int mask) {
-#ifdef __EMSCRIPTEN__
-    glClear((GLbitfield)mask);
-#else
-    (void)mask;
-#endif
-}
-
-void gl_clear_color(float r, float g, float b, float a) {
-#ifdef __EMSCRIPTEN__
-    glClearColor(r, g, b, a);
-#else
-    (void)r; (void)g; (void)b; (void)a;
-#endif
-}
-
-void gl_viewport(int x, int y, int width, int height) {
-#ifdef __EMSCRIPTEN__
-    ensure_gl_context();
-    glViewport(x, y, width, height);
-#else
-    (void)x; (void)y; (void)width; (void)height;
-#endif
-}
-
-void gl_enable(int cap) {
-#ifdef __EMSCRIPTEN__
-    glEnable((GLenum)cap);
-#else
-    (void)cap;
-#endif
-}
-
-void gl_disable(int cap) {
-#ifdef __EMSCRIPTEN__
-    glDisable((GLenum)cap);
-#else
-    (void)cap;
-#endif
-}
-
-void gl_blend_func(int sfactor, int dfactor) {
-#ifdef __EMSCRIPTEN__
-    glBlendFunc((GLenum)sfactor, (GLenum)dfactor);
-#else
-    (void)sfactor; (void)dfactor;
-#endif
-}
-
-void gl_draw_arrays(int mode, int first, int count) {
-#ifdef __EMSCRIPTEN__
-    glDrawArrays((GLenum)mode, first, count);
-#else
-    (void)mode; (void)first; (void)count;
-#endif
-}
-
-void gl_draw_elements(int mode, int count, int type, int offset) {
-#ifdef __EMSCRIPTEN__
-    glDrawElements((GLenum)mode, count, (GLenum)type, (const void *)(intptr_t)offset);
-#else
-    (void)mode; (void)count; (void)type; (void)offset;
-#endif
-}
-
-// ============================================================================
-// Float Buffer Management
-// ============================================================================
-
-int buf_create_floats(int count) {
-    if (count <= 0 || count > MAX_BUFFER_SIZE) return -1;
-    
-    for (int i = 0; i < MAX_FLOAT_BUFFERS; i++) {
-        if (!float_buffers[i].in_use) {
-            float_buffers[i].data = (float *)malloc(count * sizeof(float));
-            if (!float_buffers[i].data) return -1;
-            memset(float_buffers[i].data, 0, count * sizeof(float));
-            float_buffers[i].count = count;
-            float_buffers[i].in_use = 1;
-            return i;
-        }
-    }
-    return -1;
-}
-
-void buf_set_float(int buffer, int index, float value) {
-    if (buffer < 0 || buffer >= MAX_FLOAT_BUFFERS) return;
-    if (!float_buffers[buffer].in_use) return;
-    if (index < 0 || index >= float_buffers[buffer].count) return;
-    float_buffers[buffer].data[index] = value;
-}
-
-void buf_upload(int target, int buffer_handle, int usage) {
-#ifdef __EMSCRIPTEN__
-    if (buffer_handle < 0 || buffer_handle >= MAX_FLOAT_BUFFERS) return;
-    if (!float_buffers[buffer_handle].in_use) return;
-    
-    FloatBuffer *buf = &float_buffers[buffer_handle];
-    glBufferData((GLenum)target, buf->count * sizeof(float), buf->data, (GLenum)usage);
-#else
-    (void)target; (void)buffer_handle; (void)usage;
-#endif
-}
-
-void buf_free(int buffer_handle) {
-    if (buffer_handle < 0 || buffer_handle >= MAX_FLOAT_BUFFERS) return;
-    if (!float_buffers[buffer_handle].in_use) return;
-    
-    free(float_buffers[buffer_handle].data);
-    float_buffers[buffer_handle].data = NULL;
-    float_buffers[buffer_handle].count = 0;
-    float_buffers[buffer_handle].in_use = 0;
-}
-
-// ============================================================================
-// Texture Operations
-// ============================================================================
-
-int gl_create_texture(void) {
-#ifdef __EMSCRIPTEN__
-    GLuint tex;
-    glGenTextures(1, &tex);
-    return (int)tex;
-#else
-    return 0;
-#endif
-}
-
-void gl_bind_texture(int target, int texture) {
-#ifdef __EMSCRIPTEN__
-    glBindTexture((GLenum)target, (GLuint)texture);
-#else
-    (void)target; (void)texture;
-#endif
-}
-
-void gl_tex_parameteri(int target, int pname, int param) {
-#ifdef __EMSCRIPTEN__
-    glTexParameteri((GLenum)target, (GLenum)pname, param);
-#else
-    (void)target; (void)pname; (void)param;
-#endif
-}
-
-// ============================================================================
-// Input Implementation
-// ============================================================================
-
-int input_key_pressed(int key) {
-    if (key < 0 || key >= MAX_KEYS) return 0;
-    return key_states[key];
-}
-
-int input_key_just_pressed(int key) {
-    if (key < 0 || key >= MAX_KEYS) return 0;
-    return key_just_pressed[key];
-}
-
-EXPORT void on_key_down(int key) {
-    if (key >= 0 && key < MAX_KEYS) {
-        if (!key_states[key]) {
-            key_just_pressed[key] = 1;
-        }
-        key_states[key] = 1;
-    }
-}
-
-EXPORT void on_key_up(int key) {
-    if (key >= 0 && key < MAX_KEYS) {
-        key_states[key] = 0;
-    }
-}
-
-EXPORT void on_frame_start(void) {
-    // Clear just_pressed flags at the start of each frame
-    for (int i = 0; i < MAX_KEYS; i++) {
-        key_just_pressed[i] = 0;
-    }
-}
-
-// ============================================================================
-// Timing
-// ============================================================================
-
-int time_now(void) {
-#ifdef __EMSCRIPTEN__
-    return (int)emscripten_get_now();
-#else
-    return 0;
-#endif
-}
-
-// ============================================================================
-// Console
+// Console / Debug
 // ============================================================================
 
 void console_log(const char *msg) {
+  printf("%s\n", msg);
+  fflush(stdout);
+}
+
+void console_log_int(Value value) { printf("[LOG] %ld\n", value); }
+
+void console_log_float(float value) { printf("[LOG] %f\n", value); }
+
+// ============================================================================
+// Text Rendering
+// ============================================================================
+
 #ifdef __EMSCRIPTEN__
-    EM_ASM({
-        console.log(UTF8ToString($0));
-    }, msg);
+#include <emscripten.h>
+#endif
+
+void text_clear(void) {
+#ifdef __EMSCRIPTEN__
+  EM_ASM({
+    if (window.textCtx) {
+      window.textCtx.clearRect(0, 0, 800, 600);
+      window.textCtx.font = '15px "Berkeley Mono", monospace';
+      window.textCtx.textBaseline = 'top';
+    }
+  });
 #else
-    printf("%s\n", msg);
+  // Native GL clear handles it
 #endif
 }
 
-void console_log_int(int value) {
+void text_draw(Value x, Value y, Value size, Value r, Value g, Value b,
+               const char *text) {
+  (void)size;
 #ifdef __EMSCRIPTEN__
-    EM_ASM({
-        console.log($0);
-    }, value);
+  EM_ASM_(
+      {
+        if (window.textCtx) {
+          window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
+          window.textCtx.fillText(UTF8ToString($3), $4, $5);
+        }
+      },
+      r, g, b, text, x, y);
 #else
-    printf("%d\n", value);
+  glPushAttrib(GL_CURRENT_BIT | GL_ENABLE_BIT);
+  glDisable(GL_LIGHTING);
+  glDisable(GL_TEXTURE_2D);
+
+  glColor3f(r / 255.0f, g / 255.0f, b / 255.0f);
+  glRasterPos2i(x, SCREEN_HEIGHT - y);
+
+  while (*text) {
+    glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *text);
+    text++;
+  }
+  glPopAttrib();
 #endif
 }
 
-void console_log_float(float value) {
+void text_char(Value x, Value y, Value size, Value r, Value g, Value b,
+               char c) {
+  (void)size;
 #ifdef __EMSCRIPTEN__
-    EM_ASM({
-        console.log($0);
-    }, value);
+  EM_ASM_(
+      {
+        if (window.textCtx) {
+          window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
+          window.textCtx.fillText(String.fromCharCode($3), $4, $5);
+        }
+      },
+      r, g, b, c, x, y);
 #else
-    printf("%f\n", value);
+  glPushAttrib(GL_CURRENT_BIT | GL_ENABLE_BIT);
+  glDisable(GL_LIGHTING);
+  glDisable(GL_TEXTURE_2D);
+
+  glColor3f(r / 255.0f, g / 255.0f, b / 255.0f);
+  glRasterPos2i(x, SCREEN_HEIGHT - y);
+
+  glutBitmapCharacter(GLUT_BITMAP_9_BY_15, c);
+  glPopAttrib();
 #endif
+}
+
+void text_draw_int(Value x, Value y, Value size, Value r, Value g, Value b,
+                   Value value) {
+  char buf[32];
+  sprintf(buf, "%ld", value);
+  text_draw(x, y, size, r, g, b, buf);
 }
 
 // ============================================================================
-// Math Helpers
+// Math
 // ============================================================================
 
-float math_sin(float x) { return sinf(x); }
-float math_cos(float x) { return cosf(x); }
+Value math_sin(Value x) { return (Value)(sin(x) * 1000); }
+
+Value math_cos(Value x) { return (Value)(cos(x) * 1000); }
+
+Value math_random(Value min, Value max) {
+  return min + rand() % (max - min + 1);
+}
+
 float math_sqrt(float x) { return sqrtf(x); }
 float math_floor(float x) { return floorf(x); }
 float math_ceil(float x) { return ceilf(x); }
@@ -573,77 +710,34 @@ float math_max(float a, float b) { return a > b ? a : b; }
 // RNG
 // ============================================================================
 
-void rng_seed(int seed) {
-    rng_state = (uint32_t)seed;
+void rng_seed(Value seed) { srand((unsigned int)seed); }
+
+Value rng_int(Value max) {
+  if (max <= 0)
+    return 0;
+  return rand() % max;
 }
 
-int rng_int(int max) {
-    if (max <= 0) return 0;
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 17;
-    rng_state ^= rng_state << 5;
-    return (int)(rng_state % (uint32_t)max);
-}
-
-float rng_float(void) {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 17;
-    rng_state ^= rng_state << 5;
-    return (float)(rng_state & 0x7FFFFF) / (float)0x7FFFFF;
-}
+float rng_float(void) { return (float)rand() / (float)RAND_MAX; }
 
 // ============================================================================
-// Text Rendering (uses 2D canvas overlay via JS)
+// Game Loop Exports
 // ============================================================================
 
-void text_clear(void) {
-#ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (window.textCtx) {
-            window.textCtx.clearRect(0, 0, 800, 600);
-        }
-    });
+#ifndef GAME_BUILD
+void game_init(void) {}
+void game_update(Value dt) { (void)dt; }
+void game_render(void) {}
 #endif
+
+void on_key_down(Value key) {
+  if (key >= 0 && key < 512)
+    keys[key] = 1;
 }
 
-void text_draw(int x, int y, int size, int r, int g, int b, const char *text) {
-#ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (!window.textCtx) return;
-        var ctx = window.textCtx;
-        ctx.font = $2 + 'px "Berkeley Mono", monospace';
-        ctx.fillStyle = 'rgb(' + $3 + ',' + $4 + ',' + $5 + ')';
-        ctx.fillText(UTF8ToString($6), $0, $1 + $2);  // +size for baseline
-    }, x, y, size, r, g, b, text);
-#else
-    (void)x; (void)y; (void)size; (void)r; (void)g; (void)b; (void)text;
-#endif
+void on_key_up(Value key) {
+  if (key >= 0 && key < 512)
+    keys[key] = 0;
 }
 
-void text_char(int x, int y, int size, int r, int g, int b, char c) {
-#ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (!window.textCtx) return;
-        var ctx = window.textCtx;
-        ctx.font = $2 + 'px "Berkeley Mono", monospace';
-        ctx.fillStyle = 'rgb(' + $3 + ',' + $4 + ',' + $5 + ')';
-        ctx.fillText(String.fromCharCode($6), $0, $1 + $2);
-    }, x, y, size, r, g, b, (int)c);
-#else
-    (void)x; (void)y; (void)size; (void)r; (void)g; (void)b; (void)c;
-#endif
-}
-
-void text_draw_int(int x, int y, int size, int r, int g, int b, int value) {
-#ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (!window.textCtx) return;
-        var ctx = window.textCtx;
-        ctx.font = $2 + 'px "Berkeley Mono", monospace';
-        ctx.fillStyle = 'rgb(' + $3 + ',' + $4 + ',' + $5 + ')';
-        ctx.fillText(String($6), $0, $1 + $2);
-    }, x, y, size, r, g, b, value);
-#else
-    (void)x; (void)y; (void)size; (void)r; (void)g; (void)b; (void)value;
-#endif
-}
+void on_frame_start(void) { memcpy(keys_prev, keys, sizeof(keys)); }

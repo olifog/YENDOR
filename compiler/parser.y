@@ -34,8 +34,9 @@ void yyerror(const char *s);
 %token PLUS MINUS STAR SLASH PERCENT
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
 %token PIPE HASH BACKSLASH UNDERSCORE OBJ_OPEN OBJ_CLOSE
+%token USE
 
-%type <node> program top_level func_def
+%type <node> program top_level func_def use_stmt
 %type <node> block statement assign_stmt
 %type <node> var_decl loop_stmt for_stmt
 %type <node> expr cond_expr or_expr and_expr
@@ -71,6 +72,11 @@ top_level_list
 top_level
     : func_def { $$ = $1; }
     | var_decl { $$ = $1; }
+    | use_stmt { $$ = $1; }
+    ;
+
+use_stmt
+    : USE STRING_LITERAL DOT { $$ = ast_new_use($2); }
     ;
 
 /* Function definition: #name(args) { } or #name(args) => expr. */

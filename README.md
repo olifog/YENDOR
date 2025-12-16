@@ -47,8 +47,16 @@ sudo apt install bison flex
 ```bash
 make              # Build compiler
 make test         # Run test suite
-./build/dsc examples/hello.nh   # Compile a file
+./build/dsc examples/hello.nh # Compile a file
 ```
+
+### Test the QAD interpreter
+
+```bash
+make test-interpreter
+```
+
+If you want an example of how to use it, look in the `run_test` function in `interpreter/main.nh`.
 
 ## Architecture
 
@@ -110,4 +118,4 @@ langjam/
 
 ---
 
-*Built for Langjam 2024* 🎮
+*Built for Langjam 2025* 🎮

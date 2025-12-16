@@ -73,6 +73,20 @@ test-compiler: compiler
 	$(BUILD_DIR)/dsc $(EXAMPLES_DIR)/hello.nh
 
 # ============================================================================
+# Compile and run interpreter
+# ============================================================================
+
+.PHONY: run-interpreter
+test-interpreter: compiler
+	$(BUILD_DIR)/dsc interpreter/main.nh > $(BUILD_DIR)/interpreter.c
+	$(CC) $(CFLAGS) -I$(RUNTIME_DIR) \
+		$(BUILD_DIR)/interpreter.c \
+		$(RUNTIME_DIR)/runtime.c \
+		-o $(BUILD_DIR)/interpreter \
+		-lm -lGL -lglut -lGLU
+	$(BUILD_DIR)/interpreter
+
+# ============================================================================
 # Compile game to C (using our compiler)
 # ============================================================================
 
@@ -85,7 +99,7 @@ $(BUILD_DIR)/game.c: compiler $(GAME_DIR)/main.nh
 
 .PHONY: wasm
 wasm: $(BUILD_DIR)/game.c
-	$(EMCC) $(EMFLAGS) \
+	$(EMCC) $(EMFLAGS) -DGAME_BUILD \
 		$(BUILD_DIR)/game.c \
 		$(RUNTIME_DIR)/runtime.c \
 		-I$(RUNTIME_DIR) \

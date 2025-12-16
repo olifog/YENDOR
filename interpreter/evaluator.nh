@@ -1,0 +1,326 @@
+// Evaluator module - environment and eval functions
+// Requires: ast.nh (for TAG_* constants)
+
+// Environment functions
+#env_new() >
+    env := /ds_object_create/0.
+    /ds_set_prop/env/"__flow__"/0.
+    /ds_set_prop/env/"__return__"/0.
+    /ds_set_prop/env/"__parent__"/0.
+    << env.
+<
+
+#env_new_child(parent) >
+    env := /ds_object_create/0.
+    /ds_set_prop/env/"__flow__"/0.
+    /ds_set_prop/env/"__return__"/0.
+    /ds_set_prop/env/"__parent__"/parent.
+    << env.
+<
+
+#env_get_flow(env) >
+    << /ds_object_get/env/"__flow__".
+<
+
+#env_set_flow(env, val) >
+    /ds_set_prop/env/"__flow__"/val.
+    << val.
+<
+
+#env_get_return(env) >
+    << /ds_object_get/env/"__return__".
+<
+
+#env_set_return(env, val) >
+    /ds_set_prop/env/"__return__"/val.
+    << val.
+<
+
+#env_get(env, name) >
+    val := /ds_object_get/env/name.
+    // If not found locally and has parent, check parent
+    parent := /ds_object_get/env/"__parent__".
+    << (val == 0 and parent != 0) | >
+        1 => /env_get/parent/name
+        0 => val
+    <.
+<
+
+#env_set(env, name, value) >
+    /ds_set_prop/env/name/value.
+    << value.
+<
+
+// Eval helper functions
+#eval_decl(node, env) >
+    val := /eval/node->expr/env.
+    << /env_set/env/node->name/val.
+<
+
+#eval_assign(node, env) >
+    val := /eval/node->expr/env.
+    << /env_set/env/node->name/val.
+<
+
+#eval_seq(node, env) >
+    /eval/node->a/env.
+    flow := /env_get_flow/env.
+    << flow | >
+        0 => /eval/node->b/env
+        _ => 0
+    <.
+<
+
+#eval_var(node, env) >
+    << /env_get/env/node->name.
+<
+
+#eval_loop(node, env) >
+    res := 0.
+    loop >
+        res = /eval/node->body/env.
+        flow := /env_get_flow/env.
+        >> when flow == 1. // FLOW_BREAK
+        >> when flow == 2. // FLOW_RETURN
+    <
+    // Reset flow if break, but keep return
+    flow := /env_get_flow/env.
+    /env_set_flow/env/0 when flow == 1.
+    << res.
+<
+
+#eval_break(node, env) >
+    /env_set_flow/env/1. // FLOW_BREAK
+    << 0.
+<
+
+#eval_if(node, env) >
+    cond := /eval/node->cond/env.
+    << cond | >
+        1 => /eval/node->then_br/env
+        0 => /eval/node->else_br/env
+    <.
+<
+
+#eval_when(node, env) >
+    cond := /eval/node->cond/env.
+    << cond | >
+        1 => /eval/node->stmt/env
+        0 => 0
+    <.
+<
+
+#eval_for(node, env) >
+    start := /eval/node->start/env.
+    end := /eval/node->end/env.
+    var := node->var.
+    
+    i := start.
+    loop >
+        >> when i gt end.
+        
+        /env_set/env/var/i.
+        /eval/node->body/env.
+        
+        flow := /env_get_flow/env.
+        >> when flow == 1. // FLOW_BREAK
+        >> when flow == 2. // FLOW_RETURN
+        
+        i = i + 1.
+    <
+    
+    // Reset flow if break
+    flow := /env_get_flow/env.
+    /env_set_flow/env/0 when flow == 1.
+    << 0.
+<
+
+// Function definition - store in environment
+#eval_func(node, env) >
+    // Store function as object with params, body, and closure env
+    func := /ds_object_create/0.
+    /ds_set_prop/func/"params"/node->params.
+    /ds_set_prop/func/"body"/node->body.
+    /ds_set_prop/func/"env"/env.
+    /env_set/env/node->name/func.
+    << 0.
+<
+
+// Function call - create new scope, bind args, execute body
+#eval_call(node, env) >
+    // Look up function
+    func := /env_get/env/node->name.
+    
+    params := func->params.
+    body := func->body.
+    closure_env := func->env.
+    
+    // Create new child environment
+    call_env := /env_new_child/closure_env.
+    
+    // Bind arguments to parameters
+    args := node->args.
+    num_args := /ds_list_len/args.
+    i := 0.
+    loop >
+        >> when i ge num_args.
+        param := /ds_list_get/params/i.
+        arg := /ds_list_get/args/i.
+        arg_val := /eval/arg/env.
+        /env_set/call_env/param/arg_val.
+        i = i + 1.
+    <
+    
+    // Execute function body
+    res := /eval/body/call_env.
+    
+    // Get return value (if explicit return was used)
+    ret := /env_get_return/call_env.
+    flow := /env_get_flow/call_env.
+    
+    // If explicit return (FLOW_RETURN = 2), use ret, otherwise use expression result
+    << (flow == 2) | >
+        1 => ret
+        0 => res
+    <.
+<
+
+// Return statement
+#eval_return(node, env) >
+    val := /eval/node->expr/env.
+    /env_set_return/env/val.
+    /env_set_flow/env/2. // FLOW_RETURN
+    << val.
+<
+
+// Pattern matching
+#eval_match(node, env) >
+    val := /eval/node->value/env.
+    arms := node->arms.
+    num_arms := /ds_list_len/arms.
+    
+    i := 0.
+    result := 0.
+    found := 0.
+    loop >
+        >> when i ge num_arms.
+        >> when found == 1.
+        
+        arm := /ds_list_get/arms/i.
+        pattern := arm->pattern.
+        
+        // Check if pattern matches
+        match := pattern->tag | >
+            31 => 1  // TAG_WILDCARD always matches
+            1 => (val == pattern->value)  // TAG_LIT - compare values
+            _ => 0
+        <.
+        
+        result = /eval/arm->body/env when match.
+        found = 1 when match.
+        i = i + 1.
+    <
+    
+    << result.
+<
+
+// Array literal - evaluate all elements
+#eval_array(node, env) >
+    elements := node->elements.
+    len := /ds_list_len/elements.
+    result := /ds_list_create/.
+    
+    i := 0.
+    loop >
+        >> when i ge len.
+        elem := /ds_list_get/elements/i.
+        /ds_list_push/result/(/eval/elem/env).
+        i = i + 1.
+    <
+    
+    << result.
+<
+
+// Index access - arrays and strings
+#eval_index(node, env) >
+    arr := /eval/node->arr/env.
+    idx := /eval/node->idx/env.
+    << /ds_list_get/arr/idx.
+<
+
+// Object literal - create object and set properties
+#eval_object(node, env) >
+    fields := node->fields.
+    len := /ds_list_len/fields.
+    obj := /ds_object_create/0.
+    
+    i := 0.
+    loop >
+        >> when i ge len.
+        field := /ds_list_get/fields/i.
+        key := field->key.
+        val := /eval/field->value/env.
+        /ds_set_prop/obj/key/val.
+        i = i + 1.
+    <
+    
+    << obj.
+<
+
+// Property access - get property from object
+#eval_prop(node, env) >
+    obj := /eval/node->obj/env.
+    key := node->key.
+    << /ds_object_get/obj/key.
+<
+
+// Main eval dispatch
+#eval(node, env) >
+    << node->tag | >
+        1 => (node->value)
+        2 => /eval_var/node/env
+        3 => /eval/node->a/env + /eval/node->b/env
+        4 => /eval_decl/node/env
+        5 => /eval_seq/node/env
+        7 => /eval_assign/node/env
+        8 => /eval/node->a/env - /eval/node->b/env
+        9 => /eval/node->a/env * /eval/node->b/env
+        10 => /ds_div/(/eval/node->a/env)/(/eval/node->b/env)
+        11 => /ds_mod/(/eval/node->a/env)/(/eval/node->b/env)
+        12 => (/eval/node->a/env lt /eval/node->b/env)
+        13 => (/eval/node->a/env gt /eval/node->b/env)
+        14 => (/eval/node->a/env le /eval/node->b/env)
+        15 => (/eval/node->a/env ge /eval/node->b/env)
+        16 => (/eval/node->a/env == /eval/node->b/env)
+        17 => (/eval/node->a/env != /eval/node->b/env)
+        18 => (/eval/node->a/env and /eval/node->b/env)
+        19 => (/eval/node->a/env or /eval/node->b/env)
+        20 => (not /eval/node->a/env)
+        21 => /eval_loop/node/env
+        22 => /eval_break/node/env
+        23 => /eval_if/node/env
+        24 => /eval_when/node/env
+        25 => /eval_for/node/env
+        26 => /eval_func/node/env
+        27 => /eval_call/node/env
+        28 => /eval_return/node/env
+        29 => /eval_match/node/env
+        32 => (node->value)  // TAG_STRING - return string value
+        33 => /eval_array/node/env
+        34 => /eval_index/node/env
+        35 => /eval_object/node/env
+        37 => /eval_prop/node/env
+        38 => /eval_lambda/node/env
+        _ => 0
+    <.
+<
+
+// Lambda - create closure (like func but no name)
+#eval_lambda(node, env) >
+    // Store lambda as object with params, body, and closure env
+    func := /ds_object_create/0.
+    /ds_set_prop/func/"params"/node->params.
+    /ds_set_prop/func/"body"/node->body.
+    /ds_set_prop/func/"env"/env.
+    << func.
+<
