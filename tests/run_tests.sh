@@ -38,14 +38,144 @@ cat > "$TMP_DIR/runtime.h" << 'EOF'
 #ifndef RUNTIME_H
 #define RUNTIME_H
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 
-// Minimal runtime for testing
+// ============================================================================
+// Types & formatting
+// ============================================================================
+
+typedef long Value;
+
 static inline void console_log(const char *msg) { printf("%s\n", msg); }
-static inline void console_log_int(int value) { printf("%d\n", value); }
+static inline void console_log_int(Value value) { printf("%ld\n", value); }
+static inline void console_log_float(float value) { printf("%f\n", value); }
 
-// Stub graphics functions
+// ============================================================================
+// Object System (Handle-based)
+// ============================================================================
+
+#define MAX_OBJECTS 1024
+#define MAX_PROPS 64
+
+typedef struct {
+  char *key;
+  Value value;
+} Property;
+
+typedef struct {
+  Property props[MAX_PROPS];
+  int prop_count;
+  int in_use;
+} Object;
+
+// Simple static allocation for tests
+static Object objects[MAX_OBJECTS];
+static int objects_initialized = 0;
+
+static void init_objects(void) {
+  if (objects_initialized) return;
+  memset(objects, 0, sizeof(objects));
+  objects_initialized = 1;
+}
+
+static Value alloc_object(void) {
+  init_objects();
+  for (int i = 1; i < MAX_OBJECTS; i++) {
+    if (!objects[i].in_use) {
+      objects[i].in_use = 1;
+      objects[i].prop_count = 0;
+      return i;
+    }
+  }
+  return 0; // OOM
+}
+
+// Forward decl
+static void ds_object_set_impl(Value *obj, const char *key, Value value);
+
+static inline Value ds_object_create(int count, ...) {
+  Value handle = alloc_object();
+  if (handle == 0) return 0;
+
+  va_list args;
+  va_start(args, count);
+  for (int i = 0; i < count; i++) {
+    const char *key = va_arg(args, const char *);
+    Value val = va_arg(args, Value);
+    ds_object_set_impl(&handle, key, val);
+  }
+  va_end(args);
+  return handle;
+}
+
+static inline Value ds_object_get(Value obj, const char *key) {
+  if (obj <= 0 || obj >= MAX_OBJECTS) return 0;
+  if (!objects[obj].in_use) return 0;
+
+  for (int i = 0; i < objects[obj].prop_count; i++) {
+    if (strcmp(objects[obj].props[i].key, key) == 0) {
+      return objects[obj].props[i].value;
+    }
+  }
+  return 0;
+}
+
+static void ds_object_set_impl(Value *obj, const char *key, Value value) {
+    Value handle = *obj;
+    if (handle <= 0 || handle >= MAX_OBJECTS) {
+        handle = alloc_object();
+        *obj = handle;
+    }
+    if (!objects[handle].in_use) return;
+
+    // Update existing
+    for (int i = 0; i < objects[handle].prop_count; i++) {
+        if (strcmp(objects[handle].props[i].key, key) == 0) {
+            objects[handle].props[i].value = value;
+            return;
+        }
+    }
+    // Add new
+    if (objects[handle].prop_count < MAX_PROPS) {
+        int idx = objects[handle].prop_count++;
+        objects[handle].props[idx].key = strdup(key);
+        objects[handle].props[idx].value = value;
+    }
+}
+
+// Wrapper to match runtime.h
+static inline void ds_object_set(Value *obj, const char *key, Value value) {
+    ds_object_set_impl(obj, key, value);
+}
+
+static inline void ds_set_prop(Value obj, Value key_val, Value value) {
+    const char *key = (const char *)key_val; // In test environment, strings are char*
+    Value handle = obj; // Obj is passed by value (handle)
+    ds_object_set_impl(&handle, key, value);
+}
+
+// ============================================================================
+// String / Helpers
+// ============================================================================
+
+static inline Value ds_strlen(Value str_val) {
+   const char* s = (const char*)str_val;
+   return s ? strlen(s) : 0;
+}
+static inline Value ds_streq(Value s1, Value s2) {
+    const char* a = (const char*)s1;
+    const char* b = (const char*)s2;
+    if(!a || !b) return 0;
+    return strcmp(a, b) == 0;
+}
+
+// ============================================================================
+// Stubs
+// ============================================================================
+
 static inline void gfx_init(void) {}
 static inline void gfx_clear(int r, int g, int b, int a) { (void)r;(void)g;(void)b;(void)a; }
 static inline void gfx_rect(int x, int y, int w, int h, int r, int g, int b, int a) { 
@@ -53,48 +183,16 @@ static inline void gfx_rect(int x, int y, int w, int h, int r, int g, int b, int
 }
 static inline void gfx_present(void) {}
 
-// Object/Struct support
-#define DS_OBJECT_MAX_FIELDS 32
-#define DS_OBJECT_KEY_SIZE 32
+// Math
+static inline Value math_random(Value min, Value max) { return min; } // Deterministic for tests
+static inline Value math_sin(Value x) { return (Value)(sin(x)*1000); }
+static inline Value math_cos(Value x) { return (Value)(cos(x)*1000); }
 
-typedef struct {
-    char keys[DS_OBJECT_MAX_FIELDS][DS_OBJECT_KEY_SIZE];
-    int values[DS_OBJECT_MAX_FIELDS];
-    int count;
-} DSObject;
+// Time
+static inline Value time_ms(void) { return 0; }
 
-static inline DSObject ds_object_create(int count, ...) {
-    DSObject obj = {{{0}}, {0}, 0};
-    va_list args;
-    va_start(args, count);
-    for (int i = 0; i < count && i < DS_OBJECT_MAX_FIELDS; i++) {
-        const char *key = va_arg(args, const char *);
-        int value = va_arg(args, int);
-        strncpy(obj.keys[obj.count], key, DS_OBJECT_KEY_SIZE - 1);
-        obj.values[obj.count] = value;
-        obj.count++;
-    }
-    va_end(args);
-    return obj;
-}
-
-static inline int ds_object_get(DSObject obj, const char *key) {
-    for (int i = 0; i < obj.count; i++) {
-        if (strcmp(obj.keys[i], key) == 0) return obj.values[i];
-    }
-    return 0;
-}
-
-static inline void ds_object_set(DSObject *obj, const char *key, int value) {
-    for (int i = 0; i < obj->count; i++) {
-        if (strcmp(obj->keys[i], key) == 0) { obj->values[i] = value; return; }
-    }
-    if (obj->count < DS_OBJECT_MAX_FIELDS) {
-        strncpy(obj->keys[obj->count], key, DS_OBJECT_KEY_SIZE - 1);
-        obj->values[obj->count] = value;
-        obj->count++;
-    }
-}
+// Input
+static inline Value input_key_pressed(Value key) { (void)key; return 0; }
 
 #endif
 EOF
