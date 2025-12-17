@@ -14,6 +14,7 @@ ENTITY_GOBLIN := 103. // 'g'
 // ============================================================================
 
 // Parallel arrays for entities
+// Parallel arrays for entities
 entity_x := [].
 entity_y := [].
 entity_type := []. // Char code
@@ -24,6 +25,11 @@ entity_level := [].
 entity_hit_bonus := [].
 entity_dmg_die := [].
 entity_dmg_sides := [].
+entity_hit_flash := []. // Flash timer
+entity_is_dying := []. // 1 if dying
+entity_attack_timer := [].
+entity_attack_dx := [].
+entity_attack_dy := [].
 
 // ============================================================================
 // Management
@@ -41,6 +47,11 @@ entity_dmg_sides := [].
         entity_hit_bonus[i] = 0.
         entity_dmg_die[i] = 0.
         entity_dmg_sides[i] = 0.
+        entity_hit_flash[i] = 0.
+        entity_is_dying[i] = 0.
+        entity_attack_timer[i] = 0.
+        entity_attack_dx[i] = 0.
+        entity_attack_dy[i] = 0.
     <
 <
 
@@ -93,6 +104,11 @@ entity_dmg_sides := [].
     entity_hit_bonus[slot] = hit_bonus when valid == 1.
     entity_dmg_die[slot] = dmg_die when valid == 1.
     entity_dmg_sides[slot] = dmg_sides when valid == 1.
+    entity_hit_flash[slot] = 0 when valid == 1.
+    entity_is_dying[slot] = 0 when valid == 1.
+    entity_attack_timer[slot] = 0 when valid == 1.
+    entity_attack_dx[slot] = 0 when valid == 1.
+    entity_attack_dy[slot] = 0 when valid == 1.
     
     << slot.
 <
@@ -107,13 +123,15 @@ entity_dmg_sides := [].
     
     for i in 0..MAX_ENTITIES >
         active := entity_active[i].
+        dying := entity_is_dying[i].
+        
         ex := entity_x[i].
         ey := entity_y[i].
         
         match_x := 0. match_y := 0.
         match_x = 1 when ex == x.
         match_y = 1 when ey == y.
-        match := match_x * match_y * active.
+        match := match_x * match_y * active * (1 - dying).
         
         ret = i when match == 1.
     <
@@ -181,11 +199,11 @@ entity_dmg_sides := [].
 #update_monsters() >
     for i in 0..MAX_ENTITIES >
         active := entity_active[i].
-        // Only process active monsters
-        continue_loop := 0.
-        continue_loop = 1 when active == 0.
+        dying := entity_is_dying[i].
+        // Only process active, non-dying monsters
+        can_act := active * (1 - dying).
         
-        /process_monster/i when active == 1.
+        /process_monster/i when can_act == 1.
     <
 <
 

@@ -60,25 +60,6 @@ COL_GREEN_B := 100.
         <
     <
     
-    // Draw player with interpolated position for smooth movement
-    t_ms := anim_duration_scaled - anim_timer.
-    t_ms = 0 when t_ms lt 0.
-    
-    prev_px := player_prev_x * TILE_W.
-    curr_px := player_x * TILE_W.
-    prev_py := player_prev_y * TILE_H.
-    curr_py := player_y * TILE_H.
-    
-    // Calculate interpolated position
-    draw_x := curr_px.
-    draw_y := curr_py.
-    draw_x = prev_px + (curr_px - prev_px) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
-    draw_y = prev_py + (curr_py - prev_py) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
-    
-    px := map_offset_x + draw_x.
-    py := map_offset_y + draw_y.
-    /text_char/px/py/TILE_H/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/CHAR_PLAYER.
-    
     // Status
     /draw_status/map_offset_x/map_offset_y.
     
@@ -110,6 +91,96 @@ COL_GREEN_B := 100.
     step_x := map_offset_x + 220.
     /text_draw/step_x/dungeon_y/12/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/"Step:".
     /text_draw_int/(step_x + 45)/dungeon_y/12/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/bot_step_count.
+<
+
+#draw_player() >
+    map_offset_x := dungeon_x.
+    map_offset_y := dungeon_y + 12.
+
+    // Draw player with interpolated position for smooth movement
+    t_ms := anim_duration_scaled - anim_timer.
+    t_ms = 0 when t_ms lt 0.
+    
+    prev_px := player_prev_x * TILE_W.
+    curr_px := player_x * TILE_W.
+    prev_py := player_prev_y * TILE_H.
+    curr_py := player_y * TILE_H.
+    
+    // Calculate interpolated position
+    draw_x := curr_px.
+    draw_y := curr_py.
+    draw_x = prev_px + (curr_px - prev_px) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
+    draw_y = prev_py + (curr_py - prev_py) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
+    
+    // Attack Animation
+    // Move towards target then back
+    // Use half of timer for out, half for back
+    att_time := player_attack_timer.
+    att_dx := player_attack_dx * 5. // 5 pixels magnitude
+    att_dy := player_attack_dy * 5.
+    
+    // Only animate if timer > 0
+    // Simple linear out/in
+    // If timer 10..5: Out (0 to 1)
+    // If timer 5..0: In (1 to 0)
+    // Actually simpler: just apply offset scaled by sin? Or 10-timer?
+    // Let's do linear ramp up/down
+    
+    att_offset_x := 0.
+    att_offset_y := 0.
+    
+    is_attacking := 0.
+    is_attacking = 1 when att_time gt 0.
+    
+    // Ramp up (10 to 5)
+    // val goes 0 to 5
+    ramp_up := 10 - att_time.
+    
+    // Ramp down (5 to 0)
+    // val goes 5 to 0
+    ramp_down := att_time.
+    
+    // Pick the smaller of the two to create a triangle wave 0..5..0
+    // If time=10 (start), up=0, down=10 -> 0
+    // If time=5 (mid), up=5, down=5 -> 5
+    // If time=0 (end), up=10, down=0 -> 0
+    
+    anim_val := ramp_up.
+    anim_val = ramp_down when ramp_down lt ramp_up.
+    
+    // Scale offset (0..1.0 * magnitude)
+    // Divide by 5 to normalize to 0..1 then multiply by mag 5... so just anim_val
+    att_offset_x = att_dx * anim_val / 5 when is_attacking == 1.
+    att_offset_y = att_dy * anim_val / 5 when is_attacking == 1.
+    
+    // Apply offset
+    draw_x = draw_x + att_offset_x.
+    draw_y = draw_y + att_offset_y.
+    
+    px := map_offset_x + draw_x.
+    py := map_offset_y + draw_y.
+    
+    // Color
+    col_r := COL_WHITE_R.
+    col_g := COL_WHITE_G.
+    col_b := COL_WHITE_B.
+    
+    // Hit Flash
+    flash := player_hit_flash.
+    
+    // Decrement flash
+    player_hit_flash = flash - 1 when flash gt 0.
+    player_attack_timer = att_time - 1 when att_time gt 0.
+    
+    is_flashing := 0.
+    is_flashing = 1 when flash gt 0.
+    
+    // Flash Red
+    col_r = 255 when is_flashing == 1.
+    col_g = 50 when is_flashing == 1.
+    col_b = 50 when is_flashing == 1.
+    
+    /text_char/px/py/TILE_H/col_r/col_g/col_b/CHAR_PLAYER.
 <
 
 #draw_tile(x, y, offset_x, offset_y) >
@@ -273,13 +344,26 @@ COL_RED_B := 80.
     
     for i in 0..MAX_ENTITIES >
         active := entity_active[i].
-        // Only process active
-        skip := 0.
-        skip = 1 when active == 0.
+        dying := entity_is_dying[i].
         
-        // Draw if active
-        // Use loop guard trick or just if check inside? 
-        // We can just execute if active check passes
+        // Skip inactive
+        continue_loop := 0.
+        continue_loop = 1 when active == 0.
+        
+        // Handle Dying Cleanup
+        flash := entity_hit_flash[i].
+        
+        // If dying and flash done, remove
+        // cleanup := dying * (1 - (flash > 0)). // dying AND flash <= 0
+        is_flash_active := 0.
+        is_flash_active = 1 when flash gt 0.
+        cleanup := dying * (1 - is_flash_active).
+        
+        entity_active[i] = 0 when cleanup == 1.
+        entity_is_dying[i] = 0 when cleanup == 1.
+        
+        // Don't draw if we just cleaned it up
+        should_draw := active * (1 - cleanup).
         
         ex := entity_x[i].
         ey := entity_y[i].
@@ -287,6 +371,32 @@ COL_RED_B := 80.
         
         sx := map_offset_x + ex * TILE_W.
         sy := map_offset_y + ey * TILE_H.
+        
+        // Attack Animation Jitter
+        att_time := entity_attack_timer[i].
+        att_dx := entity_attack_dx[i] * 5.
+        att_dy := entity_attack_dy[i] * 5.
+        
+        att_offset_x := 0.
+        att_offset_y := 0.
+        
+        is_attacking := 0.
+        is_attacking = 1 when att_time gt 0.
+        
+        // Use same triangle wave logic 0..5..0
+        ramp_up := 10 - att_time.
+        ramp_down := att_time.
+        anim_val := ramp_up.
+        anim_val = ramp_down when ramp_down lt ramp_up.
+        
+        att_offset_x = att_dx * anim_val / 5 when is_attacking == 1.
+        att_offset_y = att_dy * anim_val / 5 when is_attacking == 1.
+        
+        sx = sx + att_offset_x.
+        sy = sy + att_offset_y.
+        
+        // Decrement attack timer
+        entity_attack_timer[i] = att_time - 1 when att_time gt 0 and should_draw == 1.
         
         // Color selection
         r := COL_RED_R.
@@ -301,7 +411,28 @@ COL_RED_B := 80.
         g = COL_GREEN_G when is_goblin == 1.
         b = COL_GREEN_B when is_goblin == 1.
         
-        /text_char/sx/sy/TILE_H/r/g/b/etype when active == 1.
+        // Hit Flash / Death Flash Override
+        // Decrement flash if > 0
+        entity_hit_flash[i] = flash - 1 when flash gt 0 and should_draw == 1.
+        
+        is_flashing := 0.
+        is_flashing = 1 when flash gt 0.
+        
+        // Flash Color: White for hit, Red for Dying?
+        // Let's just use White for Hit.
+        // For Dying, maybe Flicker Red/White?
+        // Let's stick to White Flash for impact.
+        
+        r = 255 when is_flashing == 1.
+        g = 255 when is_flashing == 1.
+        b = 255 when is_flashing == 1.
+        
+        // If dying, maybe Force Red?
+        r = 255 when dying == 1 and is_flashing == 1.
+        g = 50 when dying == 1 and is_flashing == 1.
+        b = 50 when dying == 1 and is_flashing == 1.
+        
+        /text_char/sx/sy/TILE_H/r/g/b/etype when should_draw == 1.
     <
 <
 

@@ -70,6 +70,16 @@
     mon_hp := entity_hp[entity_idx].
     mon_type := entity_type[entity_idx].
     
+    // Attack Animation (Visual)
+    ex := entity_x[entity_idx].
+    ey := entity_y[entity_idx].
+    dx := ex - player_x.
+    dy := ey - player_y.
+    
+    player_attack_dx = dx.
+    player_attack_dy = dy.
+    player_attack_timer = 10. // 10 frames of animation
+    
     // Player Stats
     // Str bonus: 18/00 is +6. Let's approx based on str/exc.
     str_bonus := 0.
@@ -121,6 +131,11 @@
     
     msg = msg_hit when did_hit == 1.
     
+    // Visual Polish: Hit Flash and Blood
+    entity_hit_flash[entity_idx] = 10 when did_hit == 1.
+    // Spawn blood at monster pos
+    /spawn_blood_particles/ex/ey when did_hit == 1.
+    
     // /console_log/msg.
     
     // Death?
@@ -139,7 +154,10 @@
     // /console_log/"Monster died!" when killed == 1.
     
     // Deactivate if dead
-    entity_active[entity_idx] = 0 when killed == 1.
+    // entity_active[entity_idx] = 0 when killed == 1.
+    // Use dying state for visual fade out
+    entity_is_dying[entity_idx] = 1 when killed == 1.
+    entity_hit_flash[entity_idx] = 20 when killed == 1. // Long flash for death
     
     // Add XP?
     player_xp_points = player_xp_points + entity_level[entity_idx] * 5 when killed == 1.
@@ -154,6 +172,16 @@
     mon_dmg_die := entity_dmg_die[entity_idx]. // 1 (number of dice) - wait, simplified to just sides
     mon_dmg_sides := entity_dmg_sides[entity_idx].
     mon_type := entity_type[entity_idx].
+    
+    // Attack Animation
+    ex := entity_x[entity_idx].
+    ey := entity_y[entity_idx].
+    dx := player_x - ex.
+    dy := player_y - ey.
+    
+    entity_attack_dx[entity_idx] = dx.
+    entity_attack_dy[entity_idx] = dy.
+    entity_attack_timer[entity_idx] = 10. // 10 frames
     
     mon_name := "monster".
     mon_name = "kobold" when mon_type == ENTITY_KOBOLD.
@@ -177,6 +205,10 @@
     
     // 3. Apply
     player_hp = player_hp - dmg.
+    
+    // Visual Polish: Player Hit Flash
+    player_hit_flash = 10 when did_hit == 1.
+    /spawn_blood_particles/player_x/player_y when did_hit == 1.
     
     // 4. Message
     msg := /ds_string_concat/name_cap/" misses.".

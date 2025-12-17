@@ -11,6 +11,9 @@ part_y := [].
 part_vx := [].
 part_vy := [].
 part_life := [].
+part_r := [].
+part_g := [].
+part_b := [].
 
 part_head := 0. // Index for round-robin spawning
 
@@ -22,10 +25,13 @@ part_head := 0. // Index for round-robin spawning
         part_vx[i] = 0.
         part_vy[i] = 0.
         part_life[i] = 0.
+        part_r[i] = 0.
+        part_g[i] = 0.
+        part_b[i] = 0.
     <
 <
 
-#spawn_particles(x, y) >
+#spawn_particles_ex(x, y, r, g, b) >
     // Spawn a burst of particles
     count := 10.
     
@@ -39,6 +45,9 @@ part_head := 0. // Index for round-robin spawning
         
         part_x[idx] = px.
         part_y[idx] = py.
+        part_r[idx] = r.
+        part_g[idx] = g.
+        part_b[idx] = b.
         
         // Random velocity (approx -1.0 to 1.0)
         // Scaled by 100 on velocity too
@@ -57,6 +66,19 @@ part_head := 0. // Index for round-robin spawning
         part_head = part_head + 1.
         part_head = 0 when part_head ge MAX_PARTICLES.
     <
+<
+
+#spawn_particles(x, y) >
+    // Legacy support (Gold)
+    /spawn_gold_particles/x/y.
+<
+
+#spawn_gold_particles(x, y) >
+    /spawn_particles_ex/x/y/255/215/0.
+<
+
+#spawn_blood_particles(x, y) >
+    /spawn_particles_ex/x/y/220/20/20.
 <
 
 #update_particles() >
@@ -90,12 +112,23 @@ part_head := 0. // Index for round-robin spawning
     px := part_x[i] / 100.
     py := part_y[i] / 100.
     
-    // Flicker color based on life
-    // Gold to Red fade
-    r := 255.
-    g := life * 10.
-    g = 255 when g gt 255.
-    b := 0.
+    // Fade alpha mechanism? No alpha in text_char.
+    // Fade color to black/darker?
+    // r = cur_r * life / max_life ?
+    // life is approx 20-40.
+    
+    base_r := part_r[i].
+    base_g := part_g[i].
+    base_b := part_b[i].
+    
+    // Fade logic:
+    // When life < 10, fade out?
+    factor := 10.
+    factor = life when life lt 10.
+    
+    r := base_r * factor / 10.
+    g := base_g * factor / 10.
+    b := base_b * factor / 10.
     
     /text_char/px/py/10/r/g/b/42. // '*' character
 <

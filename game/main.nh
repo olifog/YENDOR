@@ -214,6 +214,7 @@ BUTTON_BAR_HEIGHT := 44.
     /text_clear/.
     /render_dungeon/.
     /draw_entities/.
+    /draw_player/.
     /draw_particles/.
     /draw_buttons/.
     /draw_slider/.
