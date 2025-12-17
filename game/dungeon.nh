@@ -26,6 +26,7 @@ dungeon := [].
 // Arrays for MST
 parents := [].
 centers := [].
+room_params := [].
 
 // ============================================================================
 // Dungeon Access
@@ -97,7 +98,7 @@ centers := [].
 // Room Generation
 // ============================================================================
 
-#make_room_in_sector(sx, sy, sw, sh, force) >
+#make_room_in_sector(sx, sy, sw, sh, id, force) >
     // 20% chance to skip (unless forced)
     skip := /rng_int/100.
     not_forced := 0.
@@ -126,6 +127,16 @@ centers := [].
     
     /make_room/rx/ry/rw/rh.
     
+    // Store params
+    idx_x := id * 4.
+    idx_y := id * 4 + 1.
+    idx_w := id * 4 + 2.
+    idx_h := id * 4 + 3.
+    room_params[idx_x] = rx.
+    room_params[idx_y] = ry.
+    room_params[idx_w] = rw.
+    room_params[idx_h] = rh.
+
     // Return center packed: y * 1000 + x (assuming x < 1000)
     cx := rx + rw / 2.
     cy := ry + rh / 2.
@@ -377,8 +388,10 @@ centers := [].
         // Clamp
         cx = 1 when cx lt 1.
         cy = 1 when cy lt 1.
-        cx = 75 when cx gt 75.
-        cy = 20 when cy gt 20.
+        cx = 1 when cx lt 1.
+        cy = 1 when cy lt 1.
+        cx = MAP_WIDTH when cx gt MAP_WIDTH.
+        cy = MAP_HEIGHT when cy gt MAP_HEIGHT.
         
         steps = steps + 1.
     <
@@ -386,7 +399,7 @@ centers := [].
 
 #make_branches() >
     // Attempt to make random spurs/branches with wandering paths
-    pass_max := 40.
+    pass_max := 15.
     
     for k in 0..pass_max >
         // Random start point
@@ -437,8 +450,8 @@ centers := [].
             ok := 1.
             ok = 0 when cx lt 1.
             ok = 0 when cy lt 1.
-            ok = 0 when cx ge 75. // MAP_WIDTH - 1
-            ok = 0 when cy ge 20. // MAP_HEIGHT - 1
+            ok = 0 when cx ge MAP_WIDTH.
+            ok = 0 when cy ge MAP_HEIGHT.
             
             digging = 0 when ok == 0.
             
@@ -478,32 +491,48 @@ centers := [].
         centers[i] = 0.
     <
     
-    // Generate Rows
+    // Generate Rows (2x2 Grid)
     // Row 0
-    centers[0] = /make_room_in_sector/0/0/25/10/1.
-    centers[1] = /make_room_in_sector/25/0/25/10/0.
-    centers[2] = /make_room_in_sector/50/0/26/10/0.
+    centers[0] = /make_room_in_sector/0/0/25/10/0/1.
+    centers[1] = /make_room_in_sector/25/0/25/10/1/0.
     // Row 1
-    centers[3] = /make_room_in_sector/0/10/25/11/0.
-    centers[4] = /make_room_in_sector/25/10/25/11/0.
-    centers[5] = /make_room_in_sector/50/10/26/11/0.
+    centers[2] = /make_room_in_sector/0/10/25/10/2/0.
+    centers[3] = /make_room_in_sector/25/10/25/10/3/0.
     
-    // Define Edges (u, v)
+    // Generate All Possible Edges between existing rooms
     edges := [].
-    // Horizontal
-    edges[0] = 0. edges[1] = 1.
-    edges[2] = 1. edges[3] = 2.
-    edges[4] = 3. edges[5] = 4.
-    edges[6] = 4. edges[7] = 5.
-    // Vertical
-    edges[8] = 0. edges[9] = 3.
-    edges[10] = 1. edges[11] = 4.
-    edges[12] = 2. edges[13] = 5.
+    edge_count := 0.
     
-    edge_count := 7.
+    for i in 0..3 >
+        start_j := i + 1.
+        for j in start_j..4 >
+            // Check if both rooms exist
+            c_i := centers[i].
+            c_j := centers[j].
+            
+            valid_i := 0.
+            valid_i = 1 when c_i != 0.
+            valid_j := 0.
+            valid_j = 1 when c_j != 0.
+            
+            both_valid := valid_i * valid_j.
+            
+            // Add edge
+            idx := edge_count * 2.
+            edges[idx] = i when both_valid == 1.
+            edges[idx + 1] = j when both_valid == 1.
+            
+            edge_count = edge_count + 1 when both_valid == 1.
+        <
+    <
     
     // Shuffle Edges
-    for k in 0..10 >
+    // Perform many swaps to randomize
+    shuffle_iters := edge_count * 2.
+    // Ensure at least some swaps
+    shuffle_iters = 20 when shuffle_iters lt 20.
+
+    for k in 0..shuffle_iters >
         i1 := /rng_int/edge_count.
         i2 := /rng_int/edge_count.
         
@@ -545,12 +574,13 @@ centers := [].
         is_diff := 0.
         is_diff = 1 when root_u != root_v.
         
-        // Loop edge?
+
+        // Loop edge? Reduce lucky chance heavily
         chance := /rng_int/100.
         is_loop := 0.
         is_loop = 1 when root_u == root_v.
         lucky := 0.
-        lucky = 1 when chance lt 40.
+        lucky = 1 when chance lt 5. // Only 5% chance of extra loop
         add_loop := is_loop * lucky.
         
         // Decision
@@ -575,39 +605,99 @@ centers := [].
     player_prev_y = y0.
     anim_timer = 0.
     
+    // Draw branches before stairs to ensure stairs are on top?
+    // Although branches only dig empty.
+    /make_branches/.
+
     // Place Stairs in random VALID and CONNECTED room
+    // Place Stairs
     sp := 0.
+    sx := 0.
+    sy := 0.
+    
     tries := 0.
-    loop when tries lt 50 >
-        stairs_room := /rng_int/6.
-        cand := centers[stairs_room].
+    loop when tries lt 100 >
+        // Pick random room
+        r_idx := /rng_int/4.
+        c_r := centers[r_idx].
         
-        // Check connectivity to room 0
-        root_s := /find_set/stairs_room.
+        // Check exists
+        exists := 0.
+        exists = 1 when c_r != 0.
+        
+        // Check connected to root
+        root_r := /find_set/r_idx.
         root_0 := /find_set/0.
+        connected := 0.
+        connected = 1 when root_r == root_0.
         
-        is_connected := 0.
-        is_connected = 1 when root_s == root_0.
+        valid_room := exists * connected.
         
-        // Accept if connected
-        sp = cand when is_connected == 1.
+        // If valid, pick spot
+        // Retrieve params
+        pidx := r_idx * 4.
+        rrx := room_params[pidx].
+        rry := room_params[pidx + 1].
+        rrw := room_params[pidx + 2].
+        rrh := room_params[pidx + 3].
         
-        // Break if found
+        // Safety: If room skipped, params are 0.
+        // Make them safe to avoid rng_int error
+        rrw = 10 when exists == 0.
+        rrh = 10 when exists == 0.
+        
+        // Random spot inside walls
+        // x in [rx + 1, rx + rw - 2]
+        // y in [ry + 1, ry + rh - 2]
+        
+        avail_w := rrw - 2.
+        avail_h := rrh - 2.
+        
+        // Ensure positive
+        avail_w = 4 when avail_w lt 1.
+        avail_h = 4 when avail_h lt 1.
+        
+        px := rrx + 1 + /rng_int/avail_w.
+        py := rry + 1 + /rng_int/avail_h.
+        
+        // Check not on player
+        on_player_x := 0.
+        on_player_x = 1 when px == player_x.
+        on_player_y := 0.
+        on_player_y = 1 when py == player_y.
+        on_player := on_player_x * on_player_y.
+        
+        // Accept?
+        accept := valid_room * (1 - on_player).
+        
+        sx = px when accept == 1.
+        sy = py when accept == 1.
+        sp = 1 when accept == 1. // Use sp as flag
+        
         break_loop := 0.
-        break_loop = 1 when sp != 0.
-        tries = 100 when break_loop == 1.
+        break_loop = 1 when sp == 1.
+        tries = 1000 when break_loop == 1.
         
         tries = tries + 1.
     <
     
-    // Fallback to c0 if failed
-    sp = c0 when sp == 0.
+    // Fallback? If failed, just use room 0 center (not player pos)
+    // Try to ensure not player pos
+    // But player is at centers[0]. 
+    // If we failed 100 tries, something is weird. Just put it at centers[0] offset?
+    fallback := 0.
+    fallback = 1 when sp == 0.
     
-    sy := sp / 1000.
-    sx := sp - sy * 1000.
+    // Force to center of room 0 + 1
+    c0_fb := centers[0].
+    y0_fb := c0_fb / 1000.
+    x0_fb := c0_fb - y0_fb * 1000.
+    
+    sx = x0_fb + 1 when fallback == 1.
+    sy = y0_fb when fallback == 1.
     /set_tile/sx/sy/TILE_STAIRS.
     
-    /make_branches/.
+    // branches were here, moved up.
 
     // Scatter Gold
     for k in 0..10 >
