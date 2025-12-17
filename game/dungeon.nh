@@ -1,4 +1,5 @@
 // dungeon.nh - Dungeon map data and procedural generation
+@use "entity.nh".
 
 // ============================================================================
 // Map Constants
@@ -706,5 +707,7 @@ room_params := [].
         tile := /get_tile/gx/gy.
         /set_tile/gx/gy/TILE_GOLD when tile == TILE_FLOOR.
     <
+    // Spawn monsters
+    /spawn_random_monsters/.
 <
 

@@ -1,0 +1,151 @@
+// entity.nh - Entity (monster) system
+// ============================================================================
+// Constants
+// ============================================================================
+
+MAX_ENTITIES := 2.
+
+// Entity Types (Chars)
+ENTITY_KOBOLD := 107. // 'k'
+ENTITY_GOBLIN := 103. // 'g'
+
+// ============================================================================
+// Entity Storage
+// ============================================================================
+
+// Parallel arrays for entities
+entity_x := [].
+entity_y := [].
+entity_type := []. // Char code
+entity_active := []. // 0 or 1
+entity_hp := [].
+
+// ============================================================================
+// Management
+// ============================================================================
+
+#init_entities() >
+    for i in 0..MAX_ENTITIES >
+        entity_active[i] = 0.
+        entity_x[i] = 0.
+        entity_y[i] = 0.
+        entity_type[i] = 0.
+        entity_hp[i] = 0.
+    <
+<
+
+#spawn_entity(type_char, x, y) >
+    // Find free slot
+    slot := -1.
+    
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        is_free := 0.
+        is_free = 1 when active == 0.
+        
+        // Pick first free slot
+        found := 0. 
+        found = 1 when slot == -1.
+        take := found * is_free.
+        
+        slot = i when take == 1.
+    <
+    
+    // If slot found, initialize
+    valid := 0.
+    valid = 1 when slot != -1.
+    
+    entity_active[slot] = 1 when valid == 1.
+    entity_x[slot] = x when valid == 1.
+    entity_y[slot] = y when valid == 1.
+    entity_type[slot] = type_char when valid == 1.
+    
+    // Set HP based on type (simple logic for now)
+    hp := 10.
+    hp = 5 when type_char == ENTITY_KOBOLD.
+    hp = 8 when type_char == ENTITY_GOBLIN.
+    entity_hp[slot] = hp when valid == 1.
+    
+    << slot.
+<
+
+// ============================================================================
+// Accessors / Utils
+// ============================================================================
+
+#get_entity_at(x, y) >
+    // Returns index of entity at x,y or -1
+    ret := -1.
+    
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        ex := entity_x[i].
+        ey := entity_y[i].
+        
+        match_x := 0. match_y := 0.
+        match_x = 1 when ex == x.
+        match_y = 1 when ey == y.
+        match := match_x * match_y * active.
+        
+        ret = i when match == 1.
+    <
+    << ret.
+<
+// ============================================================================
+// Random Spawning
+// ============================================================================
+
+#spawn_random_monsters() >
+    /init_entities/.
+    
+    for i in 0..MAX_ENTITIES >
+        // Random Type
+        type_roll := /rng_int/2.
+        type := ENTITY_KOBOLD. // 0
+        type = ENTITY_GOBLIN when type_roll == 1.
+        
+        // Random Position
+        sx := 0. sy := 0.
+        found := 0.
+        
+        // Retry loop for valid position
+        tries := 0.
+        loop when tries lt 100 >
+            rx := /rng_int/MAP_WIDTH.
+            ry := /rng_int/MAP_HEIGHT.
+            
+            tile := /get_tile/rx/ry.
+            is_floor := 0.
+            is_floor = 1 when tile == TILE_FLOOR.
+            
+            // Check player collision
+            is_player := 0.
+            is_player_x := 0. is_player_y := 0.
+            is_player_x = 1 when rx == player_x.
+            is_player_y = 1 when ry == player_y.
+            is_player = is_player_x * is_player_y.
+            
+            // Check entity collision
+            collision := /get_entity_at/rx/ry.
+            is_occupied := 0.
+            is_occupied = 1 when collision != -1.
+            
+            // Accept?
+            valid := is_floor * (1 - is_player).
+            valid = valid * (1 - is_occupied).
+            
+            sx = rx when valid == 1.
+            sy = ry when valid == 1.
+            found = 1 when valid == 1.
+            
+            // Break
+            break_loop := 0.
+            break_loop = 1 when found == 1.
+            tries = 1000 when break_loop == 1.
+             
+            tries = tries + 1.
+        <
+        
+        /spawn_entity/type/sx/sy when found == 1.
+    <
+<

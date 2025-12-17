@@ -7,6 +7,7 @@
 @use "player.nh".
 @use "render.nh".
 @use "particles.nh".
+@use "entity.nh".
 @use "bot.nh".
 
 // ============================================================================
@@ -109,9 +110,12 @@ BUTTON_BAR_HEIGHT := 44.
     seed := /time_ms/.
     /rng_seed/seed.
     /init_particles/.
+    /init_entities/.
     /init_background_shader/.
     /calculate_layout/.
     /generate_dungeon/.
+    
+
     /init_editor/.
     game_initialized = 1.
     /console_log/"Ready! Write code and click Play to run the bot.".
@@ -180,6 +184,7 @@ BUTTON_BAR_HEIGHT := 44.
 
     /text_clear/.
     /render_dungeon/.
+    /draw_entities/.
     /draw_particles/.
     /draw_buttons/.
     /draw_slider/.

@@ -140,3 +140,45 @@ COL_GREEN_B := 100.
     /text_draw_int/(offset_x + 240)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/turns.
 <
 
+
+COL_RED_R := 255.
+COL_RED_G := 80.
+COL_RED_B := 80.
+
+#draw_entities() >
+    map_offset_x := dungeon_x.
+    map_offset_y := dungeon_y + 12.
+    
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        // Only process active
+        skip := 0.
+        skip = 1 when active == 0.
+        
+        // Draw if active
+        // Use loop guard trick or just if check inside? 
+        // We can just execute if active check passes
+        
+        ex := entity_x[i].
+        ey := entity_y[i].
+        etype := entity_type[i].
+        
+        sx := map_offset_x + ex * TILE_W.
+        sy := map_offset_y + ey * TILE_H.
+        
+        // Color selection
+        r := COL_RED_R.
+        g := COL_RED_G.
+        b := COL_RED_B.
+        
+        // Green for goblins?
+        is_goblin := 0.
+        is_goblin = 1 when etype == 103. // 'g'
+        
+        r = COL_GREEN_R when is_goblin == 1.
+        g = COL_GREEN_G when is_goblin == 1.
+        b = COL_GREEN_B when is_goblin == 1.
+        
+        /text_char/sx/sy/TILE_H/r/g/b/etype when active == 1.
+    <
+<
