@@ -1,0 +1,223 @@
+// ============================================================================
+// Bot UI Module
+// Play/Stop/Step buttons and speed slider
+// ============================================================================
+
+// ============================================================================
+// Button State
+// ============================================================================
+
+BTN_PLAY := 0.
+BTN_STOP := 1.
+BTN_STEP := 2.
+
+btn_hovered := 0 - 1.
+btn_play_x := 0.
+btn_play_y := 0.
+btn_size := 32.
+btn_spacing := 8.
+
+// ============================================================================
+// Speed Slider State
+// ============================================================================
+
+slider_x := 0.
+slider_y := 0.
+slider_width := 100.
+slider_height := 20.
+slider_pos := 0.        // 0.0 to 1.0 (logarithmic: 0=1x, 0.5=10x, 1.0=100x)
+slider_dragging := 0.
+speed_multiplier := 1.  // Computed from slider_pos
+
+// ============================================================================
+// Button Positioning
+// ============================================================================
+
+#set_button_positions(x, y) >
+    btn_play_x = x.
+    btn_play_y = y.
+    // Slider positioned after the 3 buttons
+    slider_x = x + (btn_size + btn_spacing) * 3 + 20.
+    slider_y = y + 6.
+<
+
+#get_button_at(mx, my) >
+    // Play button
+    bx := btn_play_x.
+    by := btn_play_y.
+    << BTN_PLAY when mx ge bx and mx lt bx + btn_size and my ge by and my lt by + btn_size.
+    
+    // Stop button
+    bx = btn_play_x + btn_size + btn_spacing.
+    << BTN_STOP when mx ge bx and mx lt bx + btn_size and my ge by and my lt by + btn_size.
+    
+    // Step button
+    bx = btn_play_x + (btn_size + btn_spacing) * 2.
+    << BTN_STEP when mx ge bx and mx lt bx + btn_size and my ge by and my lt by + btn_size.
+    
+    << 0 - 1.
+<
+
+// ============================================================================
+// Button Update
+// ============================================================================
+
+#update_buttons() >
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    
+    btn_hovered = /get_button_at/mx/my.
+    
+    // Handle click
+    << 0 when /input_mouse_just_pressed/ == 0.
+    
+    /bot_start/ when btn_hovered == BTN_PLAY and bot_is_running == 0.
+    /bot_stop/ when btn_hovered == BTN_STOP.
+    /bot_step_once/ when btn_hovered == BTN_STEP.
+<
+
+// ============================================================================
+// Button Rendering
+// ============================================================================
+
+#draw_buttons() >
+    // Position buttons above editor
+    bx := btn_play_x.
+    by := btn_play_y.
+    
+    // Play button (triangle)
+    play_hover := (btn_hovered == BTN_PLAY).
+    play_active := bot_is_running.
+    play_r := 60. play_g := 180. play_b := 80.
+    play_r = 80 when play_hover == 1. play_g = 220 when play_hover == 1. play_b = 100 when play_hover == 1.
+    play_r = 100 when play_active == 1. play_g = 255 when play_active == 1. play_b = 120 when play_active == 1.
+    
+    // Draw active border for play button
+    /draw_rect/(bx - 2)/(by - 2)/(btn_size + 4)/(btn_size + 4)/80/220/100/255 when play_active == 1.
+    /draw_rect/bx/by/btn_size/btn_size/30/35/40/255.
+    /draw_play_icon/(bx + 8)/(by + 6)/play_r/play_g/play_b.
+    
+    // Stop button (square)
+    bx = btn_play_x + btn_size + btn_spacing.
+    stop_hover := (btn_hovered == BTN_STOP).
+    stop_r := 180. stop_g := 60. stop_b := 60.
+    stop_r = 220 when stop_hover == 1. stop_g = 80 when stop_hover == 1. stop_b = 80 when stop_hover == 1.
+    
+    /draw_rect/bx/by/btn_size/btn_size/30/35/40/255.
+    /draw_stop_icon/(bx + 10)/(by + 10)/stop_r/stop_g/stop_b.
+    
+    // Step button (step arrow)
+    bx = btn_play_x + (btn_size + btn_spacing) * 2.
+    step_hover := (btn_hovered == BTN_STEP).
+    step_active := bot_is_stepping.
+    step_r := 80. step_g := 140. step_b := 200.
+    step_r = 100 when step_hover == 1. step_g = 180 when step_hover == 1. step_b = 240 when step_hover == 1.
+    step_r = 120 when step_active == 1. step_g = 200 when step_active == 1. step_b = 255 when step_active == 1.
+    
+    // Draw active border for step button
+    /draw_rect/(bx - 2)/(by - 2)/(btn_size + 4)/(btn_size + 4)/100/180/240/255 when step_active == 1.
+    /draw_rect/bx/by/btn_size/btn_size/30/35/40/255.
+    /draw_step_icon/(bx + 6)/(by + 6)/step_r/step_g/step_b.
+<
+
+#draw_play_icon(x, y, r, g, b) >
+    // Draw triangle pointing right (play icon)
+    // Using rectangles to approximate triangle shape
+    /draw_rect/(x + 0)/(y + 8)/4/4/r/g/b/255.
+    /draw_rect/(x + 2)/(y + 6)/4/8/r/g/b/255.
+    /draw_rect/(x + 4)/(y + 4)/4/12/r/g/b/255.
+    /draw_rect/(x + 6)/(y + 6)/4/8/r/g/b/255.
+    /draw_rect/(x + 8)/(y + 8)/4/4/r/g/b/255.
+    /draw_rect/(x + 10)/(y + 9)/4/2/r/g/b/255.
+<
+
+#draw_stop_icon(x, y, r, g, b) >
+    // Draw square (stop icon)
+    /draw_rect/x/y/12/12/r/g/b/255.
+<
+
+#draw_step_icon(x, y, r, g, b) >
+    // Draw step-forward icon (bar + triangle)
+    // Vertical bar
+    /draw_rect/x/y/3/20/r/g/b/255.
+    // Triangle (simplified as rectangles)
+    /draw_rect/(x + 6)/(y + 8)/3/4/r/g/b/255.
+    /draw_rect/(x + 8)/(y + 6)/3/8/r/g/b/255.
+    /draw_rect/(x + 10)/(y + 4)/3/12/r/g/b/255.
+    /draw_rect/(x + 12)/(y + 6)/3/8/r/g/b/255.
+    /draw_rect/(x + 14)/(y + 8)/3/4/r/g/b/255.
+<
+
+// ============================================================================
+// Slider Update
+// ============================================================================
+
+#update_slider() >
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    down := /input_mouse_down/.
+    just_pressed := /input_mouse_just_pressed/.
+    
+    // Check if mouse is over slider
+    in_slider := mx ge slider_x and mx lt slider_x + slider_width and my ge slider_y - 5 and my lt slider_y + slider_height + 5.
+    
+    // Start dragging
+    slider_dragging = 1 when just_pressed == 1 and in_slider == 1.
+    
+    // Stop dragging
+    slider_dragging = 0 when down == 0.
+    
+    // Update position while dragging
+    /update_slider_pos/mx when slider_dragging == 1.
+<
+
+#update_slider_pos(mx) >
+    // Calculate position (0-100)
+    pos := (mx - slider_x) * 100 / slider_width.
+    pos = 0 when pos lt 0.
+    pos = 100 when pos gt 100.
+    slider_pos = pos.
+    
+    // Calculate speed multiplier (logarithmic: 1x to 1000x)
+    // pos=0 -> 1x, pos=50 -> ~32x, pos=100 -> 1000x
+    // Using: speed = 10^(pos * 3 / 100) = 1 to 1000
+    // Approximate with cubic: speed = 1 + (pos^3 * 999) / 1000000
+    speed_multiplier = 1 + (pos * pos * pos * 999) / 1000000.
+    
+    // Update bot step delay: base delay / speed
+    // Base delay is 500ms at 1x
+    bot_step_delay = 500 / speed_multiplier.
+    bot_step_delay = 1 when bot_step_delay lt 1.
+<
+
+// ============================================================================
+// Slider Rendering
+// ============================================================================
+
+#draw_slider() >
+    sx := slider_x.
+    sy := slider_y.
+    sw := slider_width.
+    sh := slider_height.
+    
+    // Background track
+    /draw_rect/sx/sy/sw/sh/40/45/50/255.
+    
+    // Filled portion (up to slider position)
+    fill_w := slider_pos * sw / 100.
+    /draw_rect/sx/sy/fill_w/sh/60/120/180/255.
+    
+    // Handle
+    handle_x := sx + fill_w - 4.
+    handle_x = sx when handle_x lt sx.
+    /draw_rect/handle_x/(sy - 2)/ 8/(sh + 4)/200/200/220/255.
+    
+    // Labels: 1x, 1000x
+    /text_draw/(sx - 15)/(sy + 4)/10/150/150/150/"1x".
+    /text_draw/(sx + sw + 5)/(sy + 4)/10/150/150/150/"1000x".
+    
+    // Current speed indicator
+    /text_draw_int/(sx + sw / 2 - 10)/(sy - 15)/12/255/220/80/speed_multiplier.
+    /text_draw/(sx + sw / 2 + 15)/(sy - 15)/12/255/220/80/"x".
+<
+

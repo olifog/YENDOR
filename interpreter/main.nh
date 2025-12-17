@@ -286,13 +286,13 @@
     // ========================================
 
     /run_test/"Test 35: Lambda"/
-        "add := \(x, y) => x + y.
+        "add := \\(x, y) => x + y.
          /add/3/4."
         /7.
 
     /run_test/"Test 36: Lambda Closure"/
         "multiplier := 10.
-         scale := \(x) => x * multiplier.
+         scale := \\(x) => x * multiplier.
          /scale/5."
         /50.
 

@@ -1,0 +1,644 @@
+// ============================================================================
+// Bot Parser Module
+// Parses tokens into an AST for the bot interpreter
+// ============================================================================
+
+// ============================================================================
+// AST Tags
+// ============================================================================
+
+BOT_TAG_LIT := 1.
+BOT_TAG_VAR := 2.
+BOT_TAG_ADD := 3.
+BOT_TAG_SUB := 8.
+BOT_TAG_MUL := 9.
+BOT_TAG_DIV := 10.
+BOT_TAG_MOD := 11.
+BOT_TAG_LT := 12.
+BOT_TAG_GT := 13.
+BOT_TAG_LE := 14.
+BOT_TAG_GE := 15.
+BOT_TAG_EQ := 16.
+BOT_TAG_NE := 17.
+BOT_TAG_AND := 18.
+BOT_TAG_OR := 19.
+BOT_TAG_NOT := 20.
+BOT_TAG_DECL := 4.
+BOT_TAG_SEQ := 5.
+BOT_TAG_ASSIGN := 7.
+BOT_TAG_LOOP := 21.
+BOT_TAG_BREAK := 22.
+BOT_TAG_IF := 23.
+BOT_TAG_WHEN := 24.
+BOT_TAG_FOR := 25.
+BOT_TAG_FUNC := 26.
+BOT_TAG_CALL := 27.
+BOT_TAG_RETURN := 28.
+BOT_TAG_MATCH := 29.
+BOT_TAG_MATCH_ARM := 30.
+BOT_TAG_WILDCARD := 31.
+BOT_TAG_STRING := 32.
+BOT_TAG_ARRAY := 33.
+BOT_TAG_INDEX := 34.
+BOT_TAG_OBJECT := 35.
+BOT_TAG_FIELD := 36.
+BOT_TAG_PROP := 37.
+BOT_TAG_LAMBDA := 38.
+
+// ============================================================================
+// AST Constructors
+// ============================================================================
+
+#bot_lit(value) => { tag: BOT_TAG_LIT, value: value }.
+#bot_var(name)  => { tag: BOT_TAG_VAR, name: name }.
+#bot_add(a, b)  => { tag: BOT_TAG_ADD, a: a, b: b }.
+#bot_sub(a, b)  => { tag: BOT_TAG_SUB, a: a, b: b }.
+#bot_mul(a, b)  => { tag: BOT_TAG_MUL, a: a, b: b }.
+#bot_div(a, b)  => { tag: BOT_TAG_DIV, a: a, b: b }.
+#bot_mod(a, b)  => { tag: BOT_TAG_MOD, a: a, b: b }.
+#bot_lt_op(a, b)   => { tag: BOT_TAG_LT, a: a, b: b }.
+#bot_gt_op(a, b)   => { tag: BOT_TAG_GT, a: a, b: b }.
+#bot_le_op(a, b)   => { tag: BOT_TAG_LE, a: a, b: b }.
+#bot_ge_op(a, b)   => { tag: BOT_TAG_GE, a: a, b: b }.
+#bot_eq_op(a, b)   => { tag: BOT_TAG_EQ, a: a, b: b }.
+#bot_ne_op(a, b)   => { tag: BOT_TAG_NE, a: a, b: b }.
+#bot_and_op(a, b) => { tag: BOT_TAG_AND, a: a, b: b }.
+#bot_or_op(a, b)  => { tag: BOT_TAG_OR, a: a, b: b }.
+#bot_not_op(a)    => { tag: BOT_TAG_NOT, a: a }.
+#bot_decl(name, expr, line) => { tag: BOT_TAG_DECL, name: name, expr: expr, line: line }.
+#bot_seq(a, b)  => { tag: BOT_TAG_SEQ, a: a, b: b, line: a->line }.
+#bot_assign(name, expr, line) => { tag: BOT_TAG_ASSIGN, name: name, expr: expr, line: line }.
+#bot_loop_stmt(body) => { tag: BOT_TAG_LOOP, body: body }.
+#bot_break_stmt() => { tag: BOT_TAG_BREAK }.
+#bot_if_expr(cond, then_br, else_br) => { tag: BOT_TAG_IF, cond: cond, then_br: then_br, else_br: else_br }.
+#bot_when_stmt(stmt, cond, line) => { tag: BOT_TAG_WHEN, stmt: stmt, cond: cond, line: line }.
+#bot_for_stmt(var, start, end, body) => { tag: BOT_TAG_FOR, var: var, start: start, end: end, body: body }.
+#bot_func_def(name, params, body) => { tag: BOT_TAG_FUNC, name: name, params: params, body: body }.
+#bot_func_call(name, args, line) => { tag: BOT_TAG_CALL, name: name, args: args, line: line }.
+#bot_return_stmt(expr) => { tag: BOT_TAG_RETURN, expr: expr }.
+#bot_match_expr(value, arms) => { tag: BOT_TAG_MATCH, value: value, arms: arms }.
+#bot_match_arm(pattern, body) => { tag: BOT_TAG_MATCH_ARM, pattern: pattern, body: body }.
+#bot_wildcard() => { tag: BOT_TAG_WILDCARD }.
+#bot_str_lit(value) => { tag: BOT_TAG_STRING, value: value }.
+#bot_arr_lit(elements) => { tag: BOT_TAG_ARRAY, elements: elements }.
+#bot_index_op(arr, idx) => { tag: BOT_TAG_INDEX, arr: arr, idx: idx }.
+#bot_obj_lit(fields) => { tag: BOT_TAG_OBJECT, fields: fields }.
+#bot_obj_field(key, value) => { tag: BOT_TAG_FIELD, key: key, value: value }.
+#bot_prop_op(obj, key) => { tag: BOT_TAG_PROP, obj: obj, key: key }.
+#bot_lambda_expr(params, body) => { tag: BOT_TAG_LAMBDA, params: params, body: body }.
+
+// ============================================================================
+// Parser Helpers
+// ============================================================================
+
+#bot_peek(tokens, pos) >
+    << /ds_list_get/tokens/pos.
+<
+
+#bot_parse_paren(tokens, pos) >
+    res := /bot_parse_expr/tokens/(pos + 1).
+    end := res->end.
+    rparen := /bot_peek/tokens/end.
+    end = (rparen->type == BOT_TOK_RPAREN) | > 1 => end + 1 0 => end <.
+    << { node: res->node, end: end }.
+<
+
+#bot_parse_array(tokens, pos) >
+    pos = pos + 1.
+    
+    elements := /ds_list_create/.
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_RBRACKET.
+        
+        elem_res := /bot_parse_expr/tokens/pos.
+        /ds_list_push/elements/elem_res->node.
+        pos = elem_res->end.
+        
+        tok = /bot_peek/tokens/pos.
+        pos = pos + 1 when tok->type == BOT_TOK_COMMA.
+    <
+    
+    pos = pos + 1.
+    << { node: /bot_arr_lit/elements, end: pos }.
+<
+
+#bot_parse_object(tokens, pos) >
+    pos = pos + 1.
+    
+    fields := /ds_list_create/.
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_RBRACE.
+        
+        key := tok->value.
+        pos = pos + 1.
+        pos = pos + 1.
+        
+        val_res := /bot_parse_expr/tokens/pos.
+        pos = val_res->end.
+        
+        /ds_list_push/fields/(/bot_obj_field/key/val_res->node).
+        
+        tok = /bot_peek/tokens/pos.
+        pos = pos + 1 when tok->type == BOT_TOK_COMMA.
+    <
+    
+    pos = pos + 1.
+    << { node: /bot_obj_lit/fields, end: pos }.
+<
+
+#bot_parse_lambda(tokens, pos) >
+    pos = pos + 2.
+    
+    params := /ds_list_create/.
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_RPAREN.
+        
+        /ds_list_push/params/tok->value.
+        pos = pos + 1.
+        
+        tok = /bot_peek/tokens/pos.
+        pos = pos + 1 when tok->type == BOT_TOK_COMMA.
+    <
+    
+    pos = pos + 1.
+    pos = pos + 1.
+    
+    body_res := /bot_parse_expr/tokens/pos.
+    
+    << { node: /bot_lambda_expr/params/body_res->node, end: body_res->end }.
+<
+
+#bot_parse_primary_base(tokens, pos) >
+    tok := /bot_peek/tokens/pos.
+    << tok->type | >
+        1 => { node: /bot_lit/tok->value, end: pos + 1 }
+        2 => { node: /bot_var/tok->value, end: pos + 1 }
+        11 => /bot_parse_paren/tokens/pos
+        21 => /bot_parse_not/tokens/pos
+        6 => /bot_parse_call_expr/tokens/pos
+        38 => { node: /bot_wildcard/, end: pos + 1 }
+        39 => { node: /bot_str_lit/tok->value, end: pos + 1 }
+        40 => /bot_parse_array/tokens/pos
+        42 => /bot_parse_object/tokens/pos
+        46 => /bot_parse_lambda/tokens/pos
+        _ => { node: /bot_lit/0, end: pos }
+    <.
+<
+
+#bot_parse_primary(tokens, pos) >
+    res := /bot_parse_primary_base/tokens/pos.
+    << /bot_parse_primary_postfix/tokens/res->end/res->node.
+<
+
+#bot_parse_index_rest(tokens, pos, node) >
+    pos = pos + 1.
+    idx_res := /bot_parse_expr/tokens/pos.
+    pos = idx_res->end.
+    pos = pos + 1.
+    new_node := /bot_index_op/node/idx_res->node.
+    << /bot_parse_primary_postfix/tokens/pos/new_node.
+<
+
+#bot_parse_prop_rest(tokens, pos, node) >
+    pos = pos + 1.
+    key_tok := /bot_peek/tokens/pos.
+    key := key_tok->value.
+    pos = pos + 1.
+    new_node := /bot_prop_op/node/key.
+    << /bot_parse_primary_postfix/tokens/pos/new_node.
+<
+
+#bot_parse_primary_postfix(tokens, pos, node) >
+    tok := /bot_peek/tokens/pos.
+    
+    << /bot_parse_index_rest/tokens/pos/node when tok->type == BOT_TOK_LBRACKET.
+    << /bot_parse_prop_rest/tokens/pos/node when tok->type == BOT_TOK_PROPACCESS.
+    
+    << { node: node, end: pos }.
+<
+
+#bot_parse_not(tokens, pos) >
+    pos = pos + 1.
+    res := /bot_parse_primary/tokens/pos.
+    << { node: /bot_not_op/res->node, end: res->end }.
+<
+
+#bot_parse_factor(tokens, pos) >
+    left_res := /bot_parse_primary/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == BOT_TOK_STAR or type == BOT_TOK_SLASH or type == BOT_TOK_PERCENT).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /bot_parse_primary/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            5 => /bot_mul/left/right
+            6 => /bot_div/left/right
+            7 => /bot_mod/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#bot_parse_term(tokens, pos) >
+    left_res := /bot_parse_factor/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == BOT_TOK_PLUS or type == BOT_TOK_MINUS).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /bot_parse_factor/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            3 => /bot_add/left/right
+            4 => /bot_sub/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#bot_parse_comp(tokens, pos) >
+    left_res := /bot_parse_term/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        type := tok->type.
+        is_op := (type ge BOT_TOK_LT and type le BOT_TOK_NE).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /bot_parse_term/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            13 => /bot_lt_op/left/right
+            14 => /bot_gt_op/left/right
+            15 => /bot_le_op/left/right
+            16 => /bot_ge_op/left/right
+            17 => /bot_eq_op/left/right
+            18 => /bot_ne_op/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#bot_parse_logic(tokens, pos) >
+    left_res := /bot_parse_comp/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        type := tok->type.
+        is_op := (type == BOT_TOK_AND or type == BOT_TOK_OR).
+        >> when not is_op.
+        
+        pos = pos + 1.
+        right_res := /bot_parse_comp/tokens/pos.
+        pos = right_res->end.
+        right := right_res->node.
+        
+        left = type | >
+            19 => /bot_and_op/left/right
+            20 => /bot_or_op/left/right
+            _ => left
+        <.
+    <
+    << { node: left, end: pos }.
+<
+
+#bot_parse_if_rest(tokens, pos, left) >
+    cond_res := /bot_parse_logic/tokens/(pos + 1).
+    else_pos := cond_res->end.
+    else_tok := /bot_peek/tokens/else_pos.
+    
+    else_res := (else_tok->type == BOT_TOK_ELSE) | >
+        1 => /bot_parse_logic/tokens/(else_pos + 1)
+        0 => { node: /bot_lit/0, end: else_pos }
+    <.
+    
+    << { node: /bot_if_expr/cond_res->node/left/else_res->node, end: else_res->end }.
+<
+
+#bot_parse_match(tokens, pos, left) >
+    pos = pos + 1.
+    pos = pos + 1.
+    
+    arms := /ds_list_create/.
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_SCOPE_OUT.
+        
+        pattern_res := /bot_parse_primary/tokens/pos.
+        pos = pattern_res->end.
+        
+        pos = pos + 1.
+        
+        body_res := /bot_parse_logic/tokens/pos.
+        pos = body_res->end.
+        
+        /ds_list_push/arms/(/bot_match_arm/pattern_res->node/body_res->node).
+    <
+    
+    pos = pos + 1.
+    << { node: /bot_match_expr/left/arms, end: pos }.
+<
+
+#bot_parse_match_expr(tokens, pos) >
+    left_res := /bot_parse_logic/tokens/pos.
+    pos = left_res->end.
+    left := left_res->node.
+    
+    tok := /bot_peek/tokens/pos.
+    << tok->type | >
+        36 => /bot_parse_match/tokens/pos/left
+        25 => /bot_parse_if_rest/tokens/pos/left
+        _ => left_res
+    <.
+<
+
+#bot_parse_expr(tokens, pos) >
+    << /bot_parse_match_expr/tokens/pos.
+<
+
+#bot_parse_block(tokens, pos) >
+    prog := 0.
+    max_iter := 500.
+    iter := 0.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_SCOPE_OUT.
+        >> when tok->type == BOT_TOK_EOF.
+        >> when tok == 0.
+        >> when iter ge max_iter.
+        
+        old_pos := pos.
+        res := /bot_parse_stmt/tokens/pos.
+        pos = res->end.
+        
+        // Safety: prevent infinite loop
+        pos = pos + 1 when pos == old_pos.
+        >> when pos == old_pos.
+        
+        prog = (prog == 0) | >
+            1 => res->node
+            0 => /bot_seq/prog/res->node
+        <.
+        
+        iter = iter + 1.
+    <
+    
+    pos = pos + 1.
+    << { node: prog, end: pos }.
+<
+
+#bot_parse_loop(tokens, pos) >
+    pos = pos + 1.
+    pos = pos + 1.
+    
+    body := /bot_parse_block/tokens/pos.
+    << { node: /bot_loop_stmt/body->node, end: body->end }.
+<
+
+#bot_parse_for(tokens, pos) >
+    pos = pos + 1.
+    
+    tok := /bot_peek/tokens/pos.
+    var := tok->value.
+    pos = pos + 1.
+    
+    pos = pos + 1.
+    
+    start_res := /bot_parse_expr/tokens/pos.
+    pos = start_res->end.
+    start := start_res->node.
+    
+    pos = pos + 1.
+    
+    end_res := /bot_parse_expr/tokens/pos.
+    pos = end_res->end.
+    end := end_res->node.
+    
+    pos = pos + 1.
+    
+    body := /bot_parse_block/tokens/pos.
+    << { node: /bot_for_stmt/var/start/end/body->node, end: body->end }.
+<
+
+#bot_parse_func(tokens, pos) >
+    pos = pos + 1.
+    
+    tok := /bot_peek/tokens/pos.
+    name := tok->value.
+    pos = pos + 1.
+    
+    pos = pos + 1.
+    
+    params := /ds_list_create/.
+    max_iter := 50.
+    iter := 0.
+    loop >
+        tok = /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_RPAREN.
+        >> when tok->type == BOT_TOK_EOF.
+        >> when tok == 0.
+        >> when iter ge max_iter.
+        
+        /ds_list_push/params/tok->value when tok->value != 0.
+        pos = pos + 1.
+        
+        tok = /bot_peek/tokens/pos.
+        pos = pos + 1 when tok->type == BOT_TOK_COMMA.
+        iter = iter + 1.
+    <
+    
+    pos = pos + 1.
+    pos = pos + 1.
+    
+    body := /bot_parse_block/tokens/pos.
+    
+    << { node: /bot_func_def/name/params/body->node, end: body->end }.
+<
+
+#bot_parse_call(tokens, pos) >
+    pos = pos + 1.
+    
+    tok := /bot_peek/tokens/pos.
+    name := tok->value.
+    line := tok->line.
+    pos = pos + 1.
+    
+    args := /ds_list_create/.
+    loop >
+        tok = /bot_peek/tokens/pos.
+        >> when tok->type != BOT_TOK_SLASH.
+        
+        pos = pos + 1.
+        
+        arg_res := /bot_parse_primary/tokens/pos.
+        /ds_list_push/args/arg_res->node.
+        pos = arg_res->end.
+    <
+    
+    dot := /bot_peek/tokens/pos.
+    pos = pos + 1 when dot->type == BOT_TOK_DOT.
+    
+    << { node: /bot_func_call/name/args/line, end: pos }.
+<
+
+#bot_parse_call_expr(tokens, pos) >
+    pos = pos + 1.
+
+    tok := /bot_peek/tokens/pos.
+    name := tok->value.
+    line := tok->line.
+    pos = pos + 1.
+
+    args := /ds_list_create/.
+    loop >
+        tok = /bot_peek/tokens/pos.
+        >> when tok->type != BOT_TOK_SLASH.
+
+        pos = pos + 1.
+
+        arg_res := /bot_parse_primary/tokens/pos.
+        /ds_list_push/args/arg_res->node.
+        pos = arg_res->end.
+    <
+
+    << { node: /bot_func_call/name/args/line, end: pos }.
+<
+
+#bot_parse_return(tokens, pos) >
+    pos = pos + 1.
+    
+    res := /bot_parse_expr/tokens/pos.
+    << { node: /bot_return_stmt/res->node, end: res->end }.
+<
+
+#bot_parse_stmt_assign(tokens, pos, tok) >
+    name := tok->value.
+    line := tok->line.
+    res := /bot_parse_expr/tokens/(pos + 2).
+    dot := /bot_peek/tokens/res->end.
+    end := (dot->type == BOT_TOK_DOT) | >
+        1 => res->end + 1
+        0 => res->end
+    <.
+    
+    << { node: /bot_decl/name/res->node/line, end: end }.
+<
+
+#bot_parse_stmt_expr(tokens, pos) >
+    res := /bot_parse_expr/tokens/pos.
+    dot := /bot_peek/tokens/res->end.
+    end := (dot->type == BOT_TOK_DOT) | >
+        1 => res->end + 1
+        0 => res->end
+    <.
+    << { node: res->node, end: end }.
+<
+
+#bot_parse_stmt_ident(tokens, pos, tok) >
+    next := /bot_peek/tokens/(pos + 1).
+    << next->type | >
+        8 => /bot_parse_stmt_assign/tokens/pos/tok
+        _ => /bot_parse_stmt_expr/tokens/pos
+    <.
+<
+
+#bot_parse_modifier(tokens, res, type) >
+    pos := res->end + 1.
+    cond_res := /bot_parse_expr/tokens/pos.
+    
+    cond := cond_res->node.
+    cond = (type == BOT_TOK_UNLESS) | >
+        1 => /bot_not_op/cond
+        0 => cond
+    <.
+    
+    // Get line from inner statement
+    line := res->node->line.
+    line = 0 when line == 0.
+    
+    << { node: /bot_when_stmt/res->node/cond/line, end: cond_res->end }.
+<
+
+#bot_parse_stmt(tokens, pos) >
+    tok := /bot_peek/tokens/pos.
+    
+    res := tok->type | >
+        22 => /bot_parse_loop/tokens/pos
+        30 => /bot_parse_for/tokens/pos
+        27 => { node: /bot_break_stmt/, end: pos + 1 }
+        33 => /bot_parse_func/tokens/pos
+        34 => /bot_parse_return/tokens/pos
+        6 => /bot_parse_call/tokens/pos
+        2 => /bot_parse_stmt_ident/tokens/pos/tok
+        _ => /bot_parse_stmt_expr/tokens/pos
+    <.
+    
+    next := /bot_peek/tokens/res->end.
+    << next->type | >
+        23 => /bot_parse_modifier/tokens/res/23
+        24 => /bot_parse_modifier/tokens/res/24
+        _ => res
+    <.
+<
+
+#bot_parse_program(tokens) >
+    pos := 0.
+    prog := 0.
+    max_iter := 1000.
+    iter := 0.
+    
+    loop >
+        tok := /bot_peek/tokens/pos.
+        >> when tok->type == BOT_TOK_EOF.
+        >> when tok == 0.
+        >> when iter ge max_iter.
+        
+        old_pos := pos.
+        res := /bot_parse_stmt/tokens/pos.
+        pos = res->end.
+        
+        // Safety: if position didn't advance, skip token to prevent infinite loop
+        pos = pos + 1 when pos == old_pos.
+        >> when pos == old_pos.
+        
+        prog = (prog == 0) | >
+            1 => res->node
+            0 => /bot_seq/prog/res->node
+        <.
+        
+        iter = iter + 1.
+    <
+    
+    << prog.
+<
+

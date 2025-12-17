@@ -1,0 +1,284 @@
+// ============================================================================
+// Bot Lexer Module
+// Tokenizes source code from the editor for the bot interpreter
+// ============================================================================
+
+// ============================================================================
+// Token Types
+// ============================================================================
+
+BOT_TOK_INT := 1.
+BOT_TOK_IDENT := 2.
+BOT_TOK_PLUS := 3.
+BOT_TOK_MINUS := 4.
+BOT_TOK_STAR := 5.
+BOT_TOK_SLASH := 6.
+BOT_TOK_PERCENT := 7.
+BOT_TOK_ASSIGN := 8.
+BOT_TOK_DOT := 9.
+BOT_TOK_EOF := 10.
+BOT_TOK_LPAREN := 11.
+BOT_TOK_RPAREN := 12.
+BOT_TOK_LT := 13.
+BOT_TOK_GT := 14.
+BOT_TOK_LE := 15.
+BOT_TOK_GE := 16.
+BOT_TOK_EQ := 17.
+BOT_TOK_NE := 18.
+BOT_TOK_AND := 19.
+BOT_TOK_OR := 20.
+BOT_TOK_NOT := 21.
+BOT_TOK_LOOP := 22.
+BOT_TOK_WHEN := 23.
+BOT_TOK_UNLESS := 24.
+BOT_TOK_IF := 25.
+BOT_TOK_ELSE := 26.
+BOT_TOK_BREAK := 27.
+BOT_TOK_SCOPE_IN := 28.
+BOT_TOK_SCOPE_OUT := 29.
+BOT_TOK_FOR := 30.
+BOT_TOK_IN := 31.
+BOT_TOK_RANGE := 32.
+BOT_TOK_HASH := 33.
+BOT_TOK_RETURN := 34.
+BOT_TOK_COMMA := 35.
+BOT_TOK_PIPE := 36.
+BOT_TOK_ARROW := 37.
+BOT_TOK_UNDER := 38.
+BOT_TOK_STRING := 39.
+BOT_TOK_LBRACKET := 40.
+BOT_TOK_RBRACKET := 41.
+BOT_TOK_LBRACE := 42.
+BOT_TOK_RBRACE := 43.
+BOT_TOK_COLON := 44.
+BOT_TOK_PROPACCESS := 45.
+BOT_TOK_BACKSLASH := 46.
+
+// ============================================================================
+// Token Constructor
+// ============================================================================
+
+#bot_token(type, value, line) >
+    t := /ds_object_create/0.
+    /ds_set_prop/t/"type"/type.
+    /ds_set_prop/t/"value"/value.
+    /ds_set_prop/t/"line"/line.
+    << t.
+<
+
+// Current line during tokenization
+bot_lex_line := 0.
+
+// ============================================================================
+// Lexer Helpers
+// ============================================================================
+
+#bot_is_digit(c) => c ge 48 and c le 57.
+#bot_is_alpha(c) => (c ge 65 and c le 90) or (c ge 97 and c le 122) or c == 95.
+#bot_is_space(c) => c == 32 or c == 10 or c == 9 or c == 13.
+
+#bot_parse_int(str, start) >
+    len := /ds_strlen/str.
+    val := 0.
+    i := start.
+    loop >
+        c := /ds_string_at/str/i.
+        >> when i ge len or not (/bot_is_digit/c).
+        val = val * 10 + (c - 48).
+        i = i + 1.
+    <
+    << { val: val, end: i }.
+<
+
+#bot_parse_ident(str, start) >
+    len := /ds_strlen/str.
+    i := start.
+    
+    loop >
+        c := /ds_string_at/str/i.
+        >> when i ge len.
+        >> when not (/bot_is_alpha/c) and not (/bot_is_digit/c).
+        i = i + 1.
+    <
+    
+    val := /ds_substring/str/start/(i - start).
+    << { val: val, end: i }.
+<
+
+#bot_tokenize_digit(str, i, tokens) >
+    res := /bot_parse_int/str/i.
+    /ds_list_push/tokens/(/bot_token/BOT_TOK_INT/res->val/bot_lex_line).
+    << res->end.
+<
+
+#bot_tokenize_string(str, i, tokens) >
+    i = i + 1.
+    start := i.
+    len := /ds_strlen/str.
+    
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/str/i.
+        >> when c == 34.
+        i = i + 1.
+    <
+    
+    val := /ds_substring/str/start/(i - start).
+    /ds_list_push/tokens/(/bot_token/BOT_TOK_STRING/val/bot_lex_line).
+    << i + 1.
+<
+
+#bot_tokenize_alpha(str, i, tokens) >
+    res := /bot_parse_ident/str/i.
+    s := res->val.
+    
+    type := BOT_TOK_IDENT.
+    
+    type = (/ds_streq/s/"lt") | > 1 => BOT_TOK_LT _ => type <.
+    type = (/ds_streq/s/"gt") | > 1 => BOT_TOK_GT _ => type <.
+    type = (/ds_streq/s/"le") | > 1 => BOT_TOK_LE _ => type <.
+    type = (/ds_streq/s/"ge") | > 1 => BOT_TOK_GE _ => type <.
+    type = (/ds_streq/s/"eq") | > 1 => BOT_TOK_EQ _ => type <.
+    type = (/ds_streq/s/"ne") | > 1 => BOT_TOK_NE _ => type <.
+    type = (/ds_streq/s/"and") | > 1 => BOT_TOK_AND _ => type <.
+    type = (/ds_streq/s/"or") | > 1 => BOT_TOK_OR _ => type <.
+    type = (/ds_streq/s/"not") | > 1 => BOT_TOK_NOT _ => type <.
+    type = (/ds_streq/s/"loop") | > 1 => BOT_TOK_LOOP _ => type <.
+    type = (/ds_streq/s/"when") | > 1 => BOT_TOK_WHEN _ => type <.
+    type = (/ds_streq/s/"unless") | > 1 => BOT_TOK_UNLESS _ => type <.
+    type = (/ds_streq/s/"if") | > 1 => BOT_TOK_IF _ => type <.
+    type = (/ds_streq/s/"else") | > 1 => BOT_TOK_ELSE _ => type <.
+    type = (/ds_streq/s/"for") | > 1 => BOT_TOK_FOR _ => type <.
+    type = (/ds_streq/s/"in") | > 1 => BOT_TOK_IN _ => type <.
+    
+    val := (type == BOT_TOK_IDENT) | > 1 => s 0 => 0 <.
+    
+    /ds_list_push/tokens/(/bot_token/type/val/bot_lex_line).
+    << res->end.
+<
+
+#bot_skip_comment(str, i) >
+    len := /ds_strlen/str.
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/str/i.
+        >> when c == 10.
+        i = i + 1.
+    <
+    << i.
+<
+
+#bot_do(a, b) => b.
+
+#bot_tokenize_symbol(str, i, tokens) >
+    c := /ds_string_at/str/i.
+    next := /ds_string_at/str/(i + 1).
+    ln := bot_lex_line.
+    
+    // Check for // comment
+    is_comment := (c == 47 and next == 47).
+    << /bot_skip_comment/str/i when is_comment.
+    
+    // Check for ==
+    is_eq := (c == 61 and next == 61).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_EQ/0/ln))/(i + 2) when is_eq.
+    
+    // Check for !=
+    is_neq := (c == 33 and next == 61).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_NE/0/ln))/(i + 2) when is_neq.
+    
+    // Check for >>
+    is_break := (c == 62 and next == 62).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_BREAK/0/ln))/(i + 2) when is_break.
+    
+    // Check for ..
+    is_range := (c == 46 and next == 46).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_RANGE/0/ln))/(i + 2) when is_range.
+
+    // Check for << (return)
+    is_return := (c == 60 and next == 60).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_RETURN/0/ln))/(i + 2) when is_return.
+
+    // Check for => (arrow)
+    is_arrow := (c == 61 and next == 62).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_ARROW/0/ln))/(i + 2) when is_arrow.
+
+    // Check for -> (property access)
+    is_prop := (c == 45 and next == 62).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_PROPACCESS/0/ln))/(i + 2) when is_prop.
+
+    // Check for := (declaration)
+    is_decl := (c == 58 and next == 61).
+    << /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_ASSIGN/0/ln))/(i + 2) when is_decl.
+
+    // Single char
+    << c | >
+        43 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_PLUS/0/ln))/(i + 1)
+        45 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_MINUS/0/ln))/(i + 1)
+        42 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_STAR/0/ln))/(i + 1)
+        47 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_SLASH/0/ln))/(i + 1)
+        37 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_PERCENT/0/ln))/(i + 1)
+        46 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_DOT/0/ln))/(i + 1)
+        61 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_ASSIGN/0/ln))/(i + 1)
+        40 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_LPAREN/0/ln))/(i + 1)
+        41 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_RPAREN/0/ln))/(i + 1)
+        60 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_SCOPE_OUT/0/ln))/(i + 1)
+        62 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_SCOPE_IN/0/ln))/(i + 1)
+        35 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_HASH/0/ln))/(i + 1)
+        44 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_COMMA/0/ln))/(i + 1)
+        124 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_PIPE/0/ln))/(i + 1)
+        95 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_UNDER/0/ln))/(i + 1)
+        91 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_LBRACKET/0/ln))/(i + 1)
+        93 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_RBRACKET/0/ln))/(i + 1)
+        123 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_LBRACE/0/ln))/(i + 1)
+        125 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_RBRACE/0/ln))/(i + 1)
+        58 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_COLON/0/ln))/(i + 1)
+        92 => /bot_do/(/ds_list_push/tokens/(/bot_token/BOT_TOK_BACKSLASH/0/ln))/(i + 1)
+        _ => (i + 1)
+    <.
+<
+
+// ============================================================================
+// Main Tokenizer
+// ============================================================================
+
+#bot_tokenize(str) >
+    tokens := /ds_list_create/.
+    len := /ds_strlen/str.
+    i := 0.
+    bot_lex_line = 0.
+    
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/str/i.
+        
+        // Track newlines
+        bot_lex_line = bot_lex_line + 1 when c == 10.
+        
+        i = (
+            /bot_is_space/c | >
+                1 => i + 1
+                0 => (
+                    /bot_is_digit/c | >
+                        1 => /bot_tokenize_digit/str/i/tokens
+                        0 => (
+                            /bot_is_alpha/c | >
+                                1 => /bot_tokenize_alpha/str/i/tokens
+                                0 => (
+                                    c == 34 | >
+                                        1 => /bot_tokenize_string/str/i/tokens
+                                        0 => /bot_tokenize_symbol/str/i/tokens
+                                    <
+                                )
+                            <
+                        )
+                    <
+                )
+            <
+        ).
+    <
+    
+    /ds_list_push/tokens/(/bot_token/BOT_TOK_EOF/0/bot_lex_line).
+    << tokens.
+<
+

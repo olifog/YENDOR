@@ -1,0 +1,462 @@
+// ============================================================================
+// Bot Evaluator Module
+// Evaluates the AST to execute bot code
+// ============================================================================
+
+// ============================================================================
+// Environment
+// ============================================================================
+
+#bot_env_new() >
+    env := /ds_object_create/0.
+    /ds_set_prop/env/"__flow__"/0.
+    /ds_set_prop/env/"__return__"/0.
+    /ds_set_prop/env/"__parent__"/0.
+    << env.
+<
+
+#bot_env_new_child(parent) >
+    env := /ds_object_create/0.
+    /ds_set_prop/env/"__flow__"/0.
+    /ds_set_prop/env/"__return__"/0.
+    /ds_set_prop/env/"__parent__"/parent.
+    << env.
+<
+
+#bot_env_get_flow(env) >
+    << /ds_object_get/env/"__flow__".
+<
+
+#bot_env_set_flow(env, val) >
+    /ds_set_prop/env/"__flow__"/val.
+    << val.
+<
+
+#bot_env_get_return(env) >
+    << /ds_object_get/env/"__return__".
+<
+
+#bot_env_set_return(env, val) >
+    /ds_set_prop/env/"__return__"/val.
+    << val.
+<
+
+#bot_env_get(env, name) >
+    val := /ds_object_get/env/name.
+    parent := /ds_object_get/env/"__parent__".
+    << (val == 0 and parent != 0) | >
+        1 => /bot_env_get/parent/name
+        0 => val
+    <.
+<
+
+#bot_env_set(env, name, value) >
+    /ds_set_prop/env/name/value.
+    << value.
+<
+
+// ============================================================================
+// Evaluator Core
+// ============================================================================
+
+#bot_eval_decl(node, env) >
+    val := /bot_eval/node->expr/env.
+    << /bot_env_set/env/node->name/val.
+<
+
+#bot_eval_assign(node, env) >
+    val := /bot_eval/node->expr/env.
+    << /bot_env_set/env/node->name/val.
+<
+
+#bot_eval_seq(node, env) >
+    // Update line number for first statement
+    bot_current_line = node->a->line when node->a->line gt 0.
+    
+    /bot_eval/node->a/env.
+    
+    // In step mode, yield after each statement
+    bot_yield = 1 when bot_is_stepping == 1.
+    
+    flow := /bot_env_get_flow/env.
+    << 0 when flow != 0.
+    << 0 when bot_yield == 1.
+    
+    // Update line number for second statement
+    bot_current_line = node->b->line when node->b->line gt 0.
+    
+    << /bot_eval/node->b/env.
+<
+
+#bot_eval_var(node, env) >
+    << /bot_env_get/env/node->name.
+<
+
+#bot_eval_loop(node, env) >
+    // In step mode, set up loop state and execute first statement only
+    << /bot_enter_inf_loop_stepping/node/env when bot_is_stepping == 1.
+    
+    // In run mode, run the loop normally (yields on moves)
+    res := 0.
+    loop >
+        // Update line number for loop body
+        bot_current_line = node->body->line when node->body->line gt 0.
+        
+        res = /bot_eval/node->body/env.
+        flow := /bot_env_get_flow/env.
+        >> when flow == 1.
+        >> when flow == 2.
+        
+        // Check if we should yield (from move)
+        // Save loop state for resumption
+        bot_in_loop = 1 when bot_yield == 1.
+        bot_loop_node = node when bot_yield == 1.
+        bot_loop_iter = 0 when bot_yield == 1.
+        bot_loop_env = env when bot_yield == 1.
+        >> when bot_yield == 1.
+    <
+    flow := /bot_env_get_flow/env.
+    /bot_env_set_flow/env/0 when flow == 1.
+    // Clear loop state if we finished normally
+    bot_in_loop = 0 when bot_yield == 0.
+    << res.
+<
+
+#bot_enter_inf_loop_stepping(node, env) >
+    // Set up loop state for stepping
+    bot_in_loop = 1.
+    bot_loop_node = node.
+    bot_loop_iter = 0.
+    bot_loop_env = env.
+    bot_loop_body_count = 0.
+    bot_loop_body_idx = 0.
+    
+    // Flatten body and execute first statement
+    /bot_step_loop_body/env.
+    << 0.
+<
+
+#bot_eval_break(node, env) >
+    /bot_env_set_flow/env/1.
+    << 0.
+<
+
+#bot_eval_if(node, env) >
+    cond := /bot_eval/node->cond/env.
+    << cond | >
+        1 => /bot_eval/node->then_br/env
+        0 => /bot_eval/node->else_br/env
+    <.
+<
+
+#bot_eval_when(node, env) >
+    cond := /bot_eval/node->cond/env.
+    << cond | >
+        1 => /bot_eval/node->stmt/env
+        0 => 0
+    <.
+<
+
+#bot_eval_for(node, env) >
+    start := /bot_eval/node->start/env.
+    end := /bot_eval/node->end/env.
+    var := node->var.
+    
+    // In step mode, set up loop state and execute first statement only
+    << /bot_enter_for_loop_stepping/node/env/start/end/var when bot_is_stepping == 1.
+    
+    // In run mode, run the loop normally (yields on moves)
+    i := start.
+    loop >
+        >> when i gt end.
+        
+        /bot_env_set/env/var/i.
+        
+        // Update line number for loop body
+        bot_current_line = node->body->line when node->body->line gt 0.
+        
+        /bot_eval/node->body/env.
+        
+        flow := /bot_env_get_flow/env.
+        >> when flow == 1.
+        >> when flow == 2.
+        
+        i = i + 1.
+        
+        // Check if we should yield (from move)
+        // Save for-loop state for resumption
+        bot_in_loop = 2 when bot_yield == 1.
+        bot_loop_node = node when bot_yield == 1.
+        bot_loop_iter = i when bot_yield == 1.
+        bot_loop_var = var when bot_yield == 1.
+        bot_loop_end = end when bot_yield == 1.
+        bot_loop_env = env when bot_yield == 1.
+        >> when bot_yield == 1.
+    <
+    
+    flow := /bot_env_get_flow/env.
+    /bot_env_set_flow/env/0 when flow == 1.
+    // Clear loop state if we finished normally
+    bot_in_loop = 0 when bot_yield == 0.
+    << 0.
+<
+
+#bot_enter_for_loop_stepping(node, env, start, end, var) >
+    // Set up loop state for stepping
+    bot_in_loop = 2.
+    bot_loop_node = node.
+    bot_loop_iter = start.
+    bot_loop_var = var.
+    bot_loop_end = end.
+    bot_loop_env = env.
+    bot_loop_body_count = 0.
+    bot_loop_body_idx = 0.
+    
+    // Set loop variable
+    /bot_env_set/env/var/start.
+    
+    // Flatten body and execute first statement
+    /bot_step_loop_body/env.
+    << 0.
+<
+
+#bot_eval_func(node, env) >
+    func := /ds_object_create/0.
+    /ds_set_prop/func/"params"/node->params.
+    /ds_set_prop/func/"body"/node->body.
+    /ds_set_prop/func/"env"/env.
+    /bot_env_set/env/node->name/func.
+    << 0.
+<
+
+#bot_eval_call(node, env) >
+    name := node->name.
+    args := node->args.
+    
+    // Check for built-in functions first
+    << /bot_builtin_move/args/env when /ds_streq/name/"move".
+    << /bot_builtin_get_x/args/env when /ds_streq/name/"get_x".
+    << /bot_builtin_get_y/args/env when /ds_streq/name/"get_y".
+    << /bot_builtin_look/args/env when /ds_streq/name/"look".
+    << /bot_builtin_can_walk/args/env when /ds_streq/name/"can_walk".
+    << /bot_builtin_print/args/env when /ds_streq/name/"print".
+    
+    // Look up user-defined function
+    func := /bot_env_get/env/name.
+    
+    params := func->params.
+    body := func->body.
+    closure_env := func->env.
+    
+    call_env := /bot_env_new_child/closure_env.
+    
+    num_args := /ds_list_len/args.
+    i := 0.
+    loop >
+        >> when i ge num_args.
+        param := /ds_list_get/params/i.
+        arg := /ds_list_get/args/i.
+        arg_val := /bot_eval/arg/env.
+        /bot_env_set/call_env/param/arg_val.
+        i = i + 1.
+    <
+    
+    res := /bot_eval/body/call_env.
+    
+    ret := /bot_env_get_return/call_env.
+    flow := /bot_env_get_flow/call_env.
+    
+    << (flow == 2) | >
+        1 => ret
+        0 => res
+    <.
+<
+
+#bot_eval_return(node, env) >
+    val := /bot_eval/node->expr/env.
+    /bot_env_set_return/env/val.
+    /bot_env_set_flow/env/2.
+    << val.
+<
+
+#bot_eval_match(node, env) >
+    val := /bot_eval/node->value/env.
+    arms := node->arms.
+    num_arms := /ds_list_len/arms.
+    
+    i := 0.
+    result := 0.
+    found := 0.
+    loop >
+        >> when i ge num_arms.
+        >> when found == 1.
+        
+        arm := /ds_list_get/arms/i.
+        pattern := arm->pattern.
+        
+        match := pattern->tag | >
+            31 => 1
+            1 => (val == pattern->value)
+            _ => 0
+        <.
+        
+        result = /bot_eval/arm->body/env when match.
+        found = 1 when match.
+        i = i + 1.
+    <
+    
+    << result.
+<
+
+#bot_eval_array(node, env) >
+    elements := node->elements.
+    len := /ds_list_len/elements.
+    result := /ds_list_create/.
+    
+    i := 0.
+    loop >
+        >> when i ge len.
+        elem := /ds_list_get/elements/i.
+        /ds_list_push/result/(/bot_eval/elem/env).
+        i = i + 1.
+    <
+    
+    << result.
+<
+
+#bot_eval_index(node, env) >
+    arr := /bot_eval/node->arr/env.
+    idx := /bot_eval/node->idx/env.
+    << /ds_list_get/arr/idx.
+<
+
+#bot_eval_object(node, env) >
+    fields := node->fields.
+    len := /ds_list_len/fields.
+    obj := /ds_object_create/0.
+    
+    i := 0.
+    loop >
+        >> when i ge len.
+        field := /ds_list_get/fields/i.
+        key := field->key.
+        val := /bot_eval/field->value/env.
+        /ds_set_prop/obj/key/val.
+        i = i + 1.
+    <
+    
+    << obj.
+<
+
+#bot_eval_prop(node, env) >
+    obj := /bot_eval/node->obj/env.
+    key := node->key.
+    << /ds_object_get/obj/key.
+<
+
+#bot_eval_lambda(node, env) >
+    func := /ds_object_create/0.
+    /ds_set_prop/func/"params"/node->params.
+    /ds_set_prop/func/"body"/node->body.
+    /ds_set_prop/func/"env"/env.
+    << func.
+<
+
+#bot_eval(node, env) >
+    << 0 when node == 0.
+    
+    << node->tag | >
+        1 => (node->value)
+        2 => /bot_eval_var/node/env
+        3 => /bot_eval/node->a/env + /bot_eval/node->b/env
+        4 => /bot_eval_decl/node/env
+        5 => /bot_eval_seq/node/env
+        7 => /bot_eval_assign/node/env
+        8 => /bot_eval/node->a/env - /bot_eval/node->b/env
+        9 => /bot_eval/node->a/env * /bot_eval/node->b/env
+        10 => /ds_div/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)
+        11 => /ds_mod/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)
+        12 => (/bot_eval/node->a/env lt /bot_eval/node->b/env)
+        13 => (/bot_eval/node->a/env gt /bot_eval/node->b/env)
+        14 => (/bot_eval/node->a/env le /bot_eval/node->b/env)
+        15 => (/bot_eval/node->a/env ge /bot_eval/node->b/env)
+        16 => (/bot_eval/node->a/env == /bot_eval/node->b/env)
+        17 => (/bot_eval/node->a/env != /bot_eval/node->b/env)
+        18 => (/bot_eval/node->a/env and /bot_eval/node->b/env)
+        19 => (/bot_eval/node->a/env or /bot_eval/node->b/env)
+        20 => (not /bot_eval/node->a/env)
+        21 => /bot_eval_loop/node/env
+        22 => /bot_eval_break/node/env
+        23 => /bot_eval_if/node/env
+        24 => /bot_eval_when/node/env
+        25 => /bot_eval_for/node/env
+        26 => /bot_eval_func/node/env
+        27 => /bot_eval_call/node/env
+        28 => /bot_eval_return/node/env
+        29 => /bot_eval_match/node/env
+        32 => (node->value)
+        33 => /bot_eval_array/node/env
+        34 => /bot_eval_index/node/env
+        35 => /bot_eval_object/node/env
+        37 => /bot_eval_prop/node/env
+        38 => /bot_eval_lambda/node/env
+        _ => 0
+    <.
+<
+
+// ============================================================================
+// Built-in Functions for Bot Control
+// ============================================================================
+
+// /move/dx/dy - Move the bot by delta x and y
+#bot_builtin_move(args, env) >
+    dx := /bot_eval/(/ds_list_get/args/0)/env.
+    dy := /bot_eval/(/ds_list_get/args/1)/env.
+    
+    result := /try_move/dx/dy.
+    bot_did_move = 1 when result == 1.
+    
+    // Yield after a successful move to allow rendering
+    bot_yield = 1 when result == 1.
+    
+    << result.
+<
+
+// /get_x/ - Get the bot's current X position
+#bot_builtin_get_x(args, env) >
+    << player_x.
+<
+
+// /get_y/ - Get the bot's current Y position
+#bot_builtin_get_y(args, env) >
+    << player_y.
+<
+
+// /look/dx/dy - Look at a tile relative to the bot
+#bot_builtin_look(args, env) >
+    dx := /bot_eval/(/ds_list_get/args/0)/env.
+    dy := /bot_eval/(/ds_list_get/args/1)/env.
+    
+    << /get_tile/(player_x + dx)/(player_y + dy).
+<
+
+// /can_walk/dx/dy - Check if a tile is walkable
+#bot_builtin_can_walk(args, env) >
+    dx := /bot_eval/(/ds_list_get/args/0)/env.
+    dy := /bot_eval/(/ds_list_get/args/1)/env.
+    
+    tile := /get_tile/(player_x + dx)/(player_y + dy).
+    << /can_walk/tile.
+<
+
+// /print/value - Print a value to the message area for debugging
+#bot_builtin_print(args, env) >
+    val := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    // Store in bot_print_buffer for display
+    bot_print_buffer = val.
+    bot_has_print = 1.
+    
+    << val.
+<
+
