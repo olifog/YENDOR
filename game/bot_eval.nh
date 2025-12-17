@@ -9,6 +9,15 @@
 // Environment
 // ============================================================================
 
+#bot_check_ops() >
+    bot_ops_count = bot_ops_count + 1.
+    << 0 when bot_ops_count le bot_max_ops.
+    
+    // Timeout
+    /bot_set_error/"Bot timed out: Infinite loop detected".
+    << 1.
+<
+
 #bot_env_new() >
     env := /ds_object_create/0.
     /ds_set_prop/env/"__flow__"/0.
@@ -101,6 +110,8 @@
     // In run mode, run the loop normally (yields on moves)
     res := 0.
     loop >
+        >> when /bot_check_ops/ == 1.
+        
         // Update line number for loop body
         bot_current_line = node->body->line when node->body->line gt 0.
         
@@ -170,6 +181,7 @@
     // In run mode, run the loop normally (yields on moves)
     i := start.
     loop >
+        >> when /bot_check_ops/ == 1.
         >> when i gt end.
         
         /bot_env_set/env/var/i.
@@ -366,6 +378,9 @@
 
 #bot_eval(node, env) >
     << 0 when node == 0.
+    
+    // Check ops limit (recursion protection)
+    << 0 when /bot_check_ops/ == 1.
     
     << node->tag | >
         TAG_LIT => (node->value)

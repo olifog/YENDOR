@@ -43,6 +43,10 @@ bot_stmt_index := 0.       // Current statement index (which one to execute next
 // Flag for when bot action happens (for animation timing)
 bot_did_move := 0.
 
+// Timeout protection
+bot_ops_count := 0.
+bot_max_ops := 100000.
+
 // Yield state - for pausing execution mid-loop
 bot_yield := 0.            // 1 if we should pause execution
 bot_in_loop := 0.          // 1 if we're suspended inside a loop
@@ -193,6 +197,8 @@ bot_has_print := 0.        // 1 if there's a value to display
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    bot_loop_body_idx = 0.
+    bot_ops_count = 0.
     bot_current_line = bot_stmt_lines[0] when bot_stmt_count gt 0.
     last_message = "Bot running...".
 <
@@ -470,6 +476,9 @@ bot_has_print := 0.        // 1 if there's a value to display
     << 0 when bot_is_running == 0.
     << 0 when bot_stmt_count == 0.
     << 0 when bot_has_error == 1.
+    
+    // Reset ops count for this tick
+    bot_ops_count = 0.
     
     // If we've reached the end, stop (don't loop)
     << /bot_finished_message/ when bot_stmt_index ge bot_stmt_count.
