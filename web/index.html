@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>nh</title>
@@ -32,6 +33,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="game">
         <canvas id="canvas"></canvas>
@@ -224,7 +226,7 @@
             window.mouseJustReleased = 0;
             requestAnimationFrame(renderFrame);
         }
-        
+
         async function init() {
             try {
                 wasmModule = await createModule({
@@ -245,8 +247,9 @@
                 console.error('Init failed:', e);
             }
         }
-        
+
         if (typeof createModule !== 'undefined') init();
     </script>
 </body>
+
 </html>
