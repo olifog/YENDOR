@@ -142,6 +142,16 @@
          x."
         /5.
 
+    /run_test/"Test 17b: Nested For Loop"/
+        "total := 0.
+         for i in 1..2 >
+             for j in 1..2 >
+                 total = total + 1.
+             <.
+         <.
+         total."
+        /4.
+
     // ========================================
     // Functions
     // ========================================

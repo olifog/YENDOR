@@ -61,15 +61,19 @@ COL_GREEN_B := 100.
     <
     
     // Draw player with interpolated position for smooth movement
-    t_ms := ANIM_DURATION - anim_timer.
+    t_ms := anim_duration_scaled - anim_timer.
+    t_ms = 0 when t_ms lt 0.
     
     prev_px := player_prev_x * TILE_W.
     curr_px := player_x * TILE_W.
     prev_py := player_prev_y * TILE_H.
     curr_py := player_y * TILE_H.
     
-    draw_x := prev_px + (curr_px - prev_px) * t_ms / ANIM_DURATION.
-    draw_y := prev_py + (curr_py - prev_py) * t_ms / ANIM_DURATION.
+    // Calculate interpolated position
+    draw_x := curr_px.
+    draw_y := curr_py.
+    draw_x = prev_px + (curr_px - prev_px) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
+    draw_y = prev_py + (curr_py - prev_py) * t_ms / anim_duration_scaled when anim_duration_scaled gt 0.
     
     px := map_offset_x + draw_x.
     py := map_offset_y + draw_y.
@@ -82,13 +86,23 @@ COL_GREEN_B := 100.
     msg_y := map_offset_y + MAP_HEIGHT * TILE_H + 60.
     /text_draw/map_offset_x/msg_y/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/last_message.
     
+    // Show print value below message (yellow color: 255, 220, 80)
+    /text_draw/(map_offset_x)/(msg_y + 20)/12/255/220/80/"Print:" when bot_has_print == 1.
+    /text_draw_int/(map_offset_x + 55)/(msg_y + 20)/12/255/220/80/bot_print_buffer when bot_has_print == 1.
+    
     // Header
     /text_draw/map_offset_x/dungeon_y/12/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/"[DUNGEON]".
     
     // Bot status
     bot_x := map_offset_x + 100.
-    /text_draw/bot_x/dungeon_y/12/COL_GREEN_R/COL_GREEN_G/COL_GREEN_B/"BOT: RUNNING" when bot_running == 1.
-    /text_draw/bot_x/dungeon_y/12/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/"BOT: STOPPED" when bot_running == 0.
+    /text_draw/bot_x/dungeon_y/12/COL_GREEN_R/COL_GREEN_G/COL_GREEN_B/"BOT: RUNNING" when bot_is_running == 1.
+    /text_draw/bot_x/dungeon_y/12/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/"BOT: STOPPED" when bot_is_running == 0 and bot_has_error == 0.
+    /text_draw/bot_x/dungeon_y/12/255/80/80/"BOT: ERROR" when bot_has_error == 1.
+    
+    // Step counter
+    step_x := map_offset_x + 220.
+    /text_draw/step_x/dungeon_y/12/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/"Step:".
+    /text_draw_int/(step_x + 45)/dungeon_y/12/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/bot_step_count.
 <
 
 #draw_tile(x, y, offset_x, offset_y) >

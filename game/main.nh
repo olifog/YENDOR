@@ -7,6 +7,7 @@
 @use "player.nh".
 @use "render.nh".
 @use "particles.nh".
+@use "bot.nh".
 
 // ============================================================================
 // Screen Layout - Responsive
@@ -18,7 +19,7 @@ SCREEN_H := 720.
 // Layout mode: 0 = side by side, 1 = stacked (editor below)
 layout_mode := 0.
 
-ANIM_DURATION := 30.    // Animation duration in ms
+ANIM_DURATION := 200.   // Animation duration in ms (base, scaled by speed)
 
 // Panel bounds
 dungeon_x := 0.
@@ -56,6 +57,9 @@ game_initialized := 0.
     /setup_stacked_layout/w/h when layout_mode == 1.
 <
 
+// Button bar height
+BUTTON_BAR_HEIGHT := 44.
+
 #setup_side_layout(w, h) >
     // Calculate dungeon size
     dw := MAP_WIDTH * TILE_W + 40.
@@ -67,13 +71,14 @@ game_initialized := 0.
     dungeon_w = dw.
     dungeon_h = h - 40.
     
-    // Editor fills remaining space on right
+    // Editor fills remaining space on right (with button bar above)
     panel_editor_x = dw + 40.
-    panel_editor_y = 20.
+    panel_editor_y = 20 + BUTTON_BAR_HEIGHT.
     panel_editor_w = w - dw - 60.
-    panel_editor_h = h - 40.
+    panel_editor_h = h - 40 - BUTTON_BAR_HEIGHT.
     
     /set_editor_bounds/panel_editor_x/panel_editor_y/panel_editor_w/panel_editor_h.
+    /set_button_positions/(dw + 40)/20.
 <
 
 #setup_stacked_layout(w, h) >
@@ -85,13 +90,14 @@ game_initialized := 0.
     dungeon_w = w - 40.
     dungeon_h = half_h - 20.
     
-    // Editor on bottom
+    // Editor on bottom (with button bar above)
     panel_editor_x = 20.
-    panel_editor_y = half_h + 10.
+    panel_editor_y = half_h + 10 + BUTTON_BAR_HEIGHT.
     panel_editor_w = w - 40.
-    panel_editor_h = half_h - 20.
+    panel_editor_h = half_h - 20 - BUTTON_BAR_HEIGHT.
     
     /set_editor_bounds/panel_editor_x/panel_editor_y/panel_editor_w/panel_editor_h.
+    /set_button_positions/20/(half_h + 10).
 <
 
 // ============================================================================
@@ -108,7 +114,7 @@ game_initialized := 0.
     /generate_dungeon/.
     /init_editor/.
     game_initialized = 1.
-    /console_log/"Ready! Write code and press F5 to run the bot.".
+    /console_log/"Ready! Write code and click Play to run the bot.".
 <
 
 // ============================================================================
@@ -127,11 +133,33 @@ game_initialized := 0.
     anim_timer = anim_timer - dt.
     anim_timer = 0 when anim_timer lt 0.
     
+    // Update buttons and slider (must be before editor to intercept clicks)
+    /update_slider/.
+    /update_buttons/.
+    
     // Update editor (handles all input)
     /editor_update/dt.
     
-    // Bot execution
-    /update_bot/dt when bot_running == 1.
+    // Bot execution with timing
+    /update_bot_runner/dt when bot_is_running == 1.
+<
+
+#update_bot_runner(dt) >
+    bot_step_timer = bot_step_timer + dt.
+    
+    // Cap ticks per frame to prevent freeze on very high speeds
+    max_ticks := 100.
+    ticks := 0.
+    
+    loop >
+        << 0 when bot_step_timer lt bot_step_delay.
+        << 0 when bot_is_running == 0.
+        << 0 when ticks ge max_ticks.
+        
+        bot_step_timer = bot_step_timer - bot_step_delay.
+        /bot_run_tick/.
+        ticks = ticks + 1.
+    <
 <
 
 // ============================================================================
@@ -153,5 +181,7 @@ game_initialized := 0.
     /text_clear/.
     /render_dungeon/.
     /draw_particles/.
+    /draw_buttons/.
+    /draw_slider/.
     /render_editor/.
 <

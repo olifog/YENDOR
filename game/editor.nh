@@ -157,18 +157,54 @@ ED_INSERT_B := 130.
 #init_editor() >
     /console_log/"Initializing editor...".
     
-    editor_lines[0] = "// Bot Control Program".
-    editor_lines[1] = "// Write code to control the @".
-    editor_lines[2] = "".
-    editor_lines[3] = "#bot_move() >".
-    editor_lines[4] = "    // Return direction:".
-    editor_lines[5] = "    // 0=left 1=right 2=up 3=down".
-    editor_lines[6] = "    << 1.".
-    editor_lines[7] = "<".
-    editor_num_lines = 8.
+    // Left-wall following maze solver
+    editor_lines[0] = "// Left-Wall Follower".
+    editor_lines[1] = "// First go down to find a wall".
+    editor_lines[2] = "loop >".
+    editor_lines[3] = "    c := /can_walk/0/1.".
+    editor_lines[4] = "    >> when c == 0.".
+    editor_lines[5] = "    /move/0/1.".
+    editor_lines[6] = "<".
+    editor_lines[7] = "".
+    editor_lines[8] = "// dir: 0=N 1=E 2=S 3=W".
+    editor_lines[9] = "// Start facing West (wall below us)".
+    editor_lines[10] = "dir := 3.".
+    editor_lines[11] = "".
+    editor_lines[12] = "loop >".
+    editor_lines[13] = "    // Get forward vector".
+    editor_lines[14] = "    fx := 0. fy := 0.".
+    editor_lines[15] = "    fx = 0 when dir == 0. fy = (0-1) when dir == 0.".
+    editor_lines[16] = "    fx = 1 when dir == 1. fy = 0 when dir == 1.".
+    editor_lines[17] = "    fx = 0 when dir == 2. fy = 1 when dir == 2.".
+    editor_lines[18] = "    fx = (0-1) when dir == 3. fy = 0 when dir == 3.".
+    editor_lines[19] = "".
+    editor_lines[20] = "    // Get left vector".
+    editor_lines[21] = "    left := dir - 1.".
+    editor_lines[22] = "    left = 3 when left lt 0.".
+    editor_lines[23] = "    lx := 0. ly := 0.".
+    editor_lines[24] = "    lx = 0 when left == 0. ly = (0-1) when left == 0.".
+    editor_lines[25] = "    lx = 1 when left == 1. ly = 0 when left == 1.".
+    editor_lines[26] = "    lx = 0 when left == 2. ly = 1 when left == 2.".
+    editor_lines[27] = "    lx = (0-1) when left == 3. ly = 0 when left == 3.".
+    editor_lines[28] = "".
+    editor_lines[29] = "    can_f := /can_walk/fx/fy.".
+    editor_lines[30] = "    can_l := /can_walk/lx/ly.".
+    editor_lines[31] = "".
+    editor_lines[32] = "    // If can go left, turn left and go".
+    editor_lines[33] = "    dir = left when can_l == 1.".
+    editor_lines[34] = "    /move/lx/ly when can_l == 1.".
+    editor_lines[35] = "".
+    editor_lines[36] = "    // Else if can go forward, go".
+    editor_lines[37] = "    /move/fx/fy when can_l == 0 and can_f == 1.".
+    editor_lines[38] = "".
+    editor_lines[39] = "    // Else turn right".
+    editor_lines[40] = "    dir = dir + 1 when can_l == 0 and can_f == 0.".
+    editor_lines[41] = "    dir = 0 when dir gt 3.".
+    editor_lines[42] = "<".
+    editor_num_lines = 43.
     
-    editor_cursor_line = 6.
-    editor_cursor_col = 7.
+    editor_cursor_line = 2.
+    editor_cursor_col = 0.
     has_selection = 0.
     
     /console_log/"Editor ready!".
@@ -397,6 +433,7 @@ ED_INSERT_B := 130.
     editor_cursor_line = sel_start_line.
     editor_cursor_col = sel_start_col.
     has_selection = 0.
+    /bot_notify_code_changed/.
     << 1.
 <
 
@@ -426,6 +463,7 @@ ED_INSERT_B := 130.
     editor_cursor_col = sel_start_col.
     has_selection = 0.
     /editor_adjust_scroll/.
+    /bot_notify_code_changed/.
 <
 
 // ============================================================================
@@ -443,6 +481,7 @@ ED_INSERT_B := 130.
     editor_lines[editor_cursor_line] = new_line.
     editor_cursor_col = editor_cursor_col + 1.
     /reset_blink/.
+    /bot_notify_code_changed/.
 <
 
 #editor_delete_char_at_cursor() >
@@ -458,6 +497,7 @@ ED_INSERT_B := 130.
     new_line := /ds_string_delete_char/line/editor_cursor_col.
     editor_lines[editor_cursor_line] = new_line.
     /reset_blink/.
+    /bot_notify_code_changed/.
 <
 
 #editor_backspace() >
@@ -490,6 +530,7 @@ ED_INSERT_B := 130.
     editor_cursor_col = prev_len.
     /reset_blink/.
     /editor_adjust_scroll/.
+    /bot_notify_code_changed/.
     << 1.
 <
 
@@ -508,6 +549,7 @@ ED_INSERT_B := 130.
     
     editor_num_lines = editor_num_lines - 1.
     /reset_blink/.
+    /bot_notify_code_changed/.
     << 1.
 <
 
@@ -534,6 +576,7 @@ ED_INSERT_B := 130.
     editor_cursor_col = 0.
     /reset_blink/.
     /editor_adjust_scroll/.
+    /bot_notify_code_changed/.
 <
 
 #editor_insert_tab() >
@@ -1813,15 +1856,33 @@ ED_INSERT_B := 130.
         
         ly := content_y + i * EDITOR_LINE_HEIGHT.
         
+        // Execution indicator - highlight line background when bot is running/stepped
+        is_exec_line := (line_idx == bot_current_line).
+        is_active := (bot_is_running == 1 or bot_step_count gt 0).
+        /draw_exec_indicator/(editor_x)/(ly - 2)/(line_num_width + 5) when is_exec_line == 1 and is_active == 1.
+        
         // Line number
         lnx := editor_x + 5.
         /text_draw_int/lnx/ly/EDITOR_FONT_SIZE/ED_LINENUM_R/ED_LINENUM_G/ED_LINENUM_B/(line_idx + 1).
+        
+        // Execution arrow marker
+        /draw_exec_arrow/(editor_x - 2)/ly when is_exec_line == 1 and is_active == 1.
         
         // Line content
         tx := editor_x + line_num_width + 10.
         line_text := editor_lines[line_idx].
         /text_draw/tx/ly/EDITOR_FONT_SIZE/ED_TEXT_R/ED_TEXT_G/ED_TEXT_B/line_text.
     <
+<
+
+#draw_exec_indicator(x, y, w) >
+    // Draw a subtle highlight behind the current execution line
+    /draw_rect/x/y/w/EDITOR_LINE_HEIGHT/40/60/40/180.
+<
+
+#draw_exec_arrow(x, y) >
+    // Draw a small arrow marker (>) to indicate execution point
+    /text_draw/x/y/EDITOR_FONT_SIZE/100/255/100/">".
 <
 
 #draw_editor_cursor() >
