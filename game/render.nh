@@ -1,0 +1,118 @@
+// render.nh - Colors and dungeon rendering
+
+// ============================================================================
+// Display Constants
+// ============================================================================
+
+TILE_W := 10.
+TILE_H := 16.
+
+// Tile characters
+CHAR_FLOOR := 46.       // '.'
+CHAR_WALL_H := 45.      // '-'
+CHAR_WALL_V := 124.     // '|'
+CHAR_PLAYER := 64.      // '@'
+CHAR_DOOR := 43.        // '+'
+CHAR_CORRIDOR := 35.    // '#'
+CHAR_STAIRS_DOWN := 62. // '>'
+CHAR_GOLD := 36.        // '$'
+
+// ============================================================================
+// Colors
+// ============================================================================
+
+COL_GRAY_R := 170.
+COL_GRAY_G := 170.
+COL_GRAY_B := 170.
+
+COL_WHITE_R := 255.
+COL_WHITE_G := 255.
+COL_WHITE_B := 255.
+
+COL_GOLD_R := 255.
+COL_GOLD_G := 255.
+COL_GOLD_B := 0.
+
+COL_BROWN_R := 180.
+COL_BROWN_G := 100.
+COL_BROWN_B := 40.
+
+COL_CYAN_R := 0.
+COL_CYAN_G := 255.
+COL_CYAN_B := 255.
+
+COL_GREEN_R := 100.
+COL_GREEN_G := 255.
+COL_GREEN_B := 100.
+
+// ============================================================================
+// Dungeon Rendering
+// ============================================================================
+
+#render_dungeon() >
+    map_offset_x := dungeon_x.
+    map_offset_y := dungeon_y + 12.
+    
+    // Draw tiles
+    for y in 0..MAP_HEIGHT >
+        for x in 0..MAP_WIDTH >
+            /draw_tile/x/y/map_offset_x/map_offset_y.
+        <
+    <
+    
+    // Draw player
+    px := map_offset_x + player_x * TILE_W.
+    py := map_offset_y + player_y * TILE_H.
+    /text_char/px/py/TILE_H/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/CHAR_PLAYER.
+    
+    // Status
+    /draw_status/map_offset_x/map_offset_y.
+    
+    // Message
+    msg_y := map_offset_y + MAP_HEIGHT * TILE_H + 60.
+    /text_draw/map_offset_x/msg_y/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/last_message.
+    
+    // Header
+    /text_draw/map_offset_x/dungeon_y/12/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/"[DUNGEON]".
+    
+    // Bot status
+    bot_x := map_offset_x + 100.
+    /text_draw/bot_x/dungeon_y/12/COL_GREEN_R/COL_GREEN_G/COL_GREEN_B/"BOT: RUNNING" when bot_running == 1.
+    /text_draw/bot_x/dungeon_y/12/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/"BOT: STOPPED" when bot_running == 0.
+<
+
+#draw_tile(x, y, offset_x, offset_y) >
+    tile := /get_tile/x/y.
+    << 0 when tile == TILE_EMPTY.
+    
+    sx := offset_x + x * TILE_W.
+    sy := offset_y + y * TILE_H.
+    
+    /text_char/sx/sy/TILE_H/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/CHAR_FLOOR when tile == TILE_FLOOR.
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_WALL_H when tile == TILE_WALL_H.
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_WALL_V when tile == TILE_WALL_V.
+    /text_char/sx/sy/TILE_H/COL_GRAY_R/COL_GRAY_G/COL_GRAY_B/CHAR_CORRIDOR when tile == TILE_CORRIDOR.
+    /text_char/sx/sy/TILE_H/COL_BROWN_R/COL_BROWN_G/COL_BROWN_B/CHAR_DOOR when tile == TILE_DOOR.
+    /text_char/sx/sy/TILE_H/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/CHAR_STAIRS_DOWN when tile == TILE_STAIRS.
+    /text_char/sx/sy/TILE_H/COL_GOLD_R/COL_GOLD_G/COL_GOLD_B/CHAR_GOLD when tile == TILE_GOLD.
+<
+
+#draw_status(offset_x, offset_y) >
+    y := offset_y + MAP_HEIGHT * TILE_H + 10.
+    
+    /text_draw/offset_x/y/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"Player the Adventurer".
+    
+    y2 := y + 20.
+    /text_draw/offset_x/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"Dlvl:".
+    /text_draw_int/(offset_x + 50)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/dungeon_level.
+    
+    /text_draw/(offset_x + 80)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"$:".
+    /text_draw_int/(offset_x + 100)/y2/14/COL_GOLD_R/COL_GOLD_G/COL_GOLD_B/player_gold.
+    
+    /text_draw/(offset_x + 150)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"HP:".
+    /text_draw_int/(offset_x + 180)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/player_hp.
+    
+    /text_draw/(offset_x + 220)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/"T:".
+    /text_draw_int/(offset_x + 240)/y2/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/turns.
+<
+

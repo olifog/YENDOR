@@ -1,0 +1,106 @@
+// player.nh - Player state, movement, and bot logic
+
+// ============================================================================
+// Player State
+// ============================================================================
+
+player_x := 5.
+player_y := 4.
+player_hp := 16.
+player_max_hp := 16.
+player_gold := 0.
+dungeon_level := 1.
+turns := 0.
+
+// Bot state
+bot_running := 0.
+bot_timer := 0.
+bot_step_delay := 300.  // ms between bot moves
+
+// Message
+last_message := "Write code to control @. Press F5 to run.".
+
+// ============================================================================
+// Movement
+// ============================================================================
+
+#can_walk(tile) >
+    << 1 when tile == TILE_FLOOR.
+    << 1 when tile == TILE_CORRIDOR.
+    << 1 when tile == TILE_DOOR.
+    << 1 when tile == TILE_STAIRS.
+    << 1 when tile == TILE_GOLD.
+    << 0.
+<
+
+#try_move(dx, dy) >
+    new_x := player_x + dx.
+    new_y := player_y + dy.
+    
+    tile := /get_tile/new_x/new_y.
+    walkable := /can_walk/tile.
+    
+    << 0 when walkable == 0.
+    
+    // Collect gold
+    last_message = "You pick up gold!" when tile == TILE_GOLD.
+    player_gold = player_gold + /rng_int/20 + 5 when tile == TILE_GOLD.
+    /set_tile/new_x/new_y/TILE_FLOOR when tile == TILE_GOLD.
+    
+    // Stairs
+    last_message = "You found the stairs! Level complete!" when tile == TILE_STAIRS.
+    
+    player_x = new_x.
+    player_y = new_y.
+    turns = turns + 1.
+    
+    << 1.
+<
+
+// ============================================================================
+// Level Change
+// ============================================================================
+
+#change_level(delta) >
+    new_depth := dungeon_level + delta.
+    dungeon_level = new_depth.
+    
+    // Regenerate
+    /generate_dungeon/.
+    
+    last_message = "You descend deeper...".
+    << 1.
+<
+
+// ============================================================================
+// Bot Execution
+// ============================================================================
+
+#bot_step() >
+    // Random movement demo
+    dir := /rng_int/4.
+    
+    neg1 := 0 - 1.
+    /try_move/neg1/0 when dir == 0.  // left
+    /try_move/1/0 when dir == 1.     // right
+    /try_move/0/neg1 when dir == 2.  // up
+    /try_move/0/1 when dir == 3.     // down
+<
+
+#toggle_bot() >
+    bot_running = 0 when bot_running == 1.
+    bot_running = 1 when bot_running == 0.
+    last_message = "Bot started! Watch @ move." when bot_running == 1.
+    last_message = "Bot stopped." when bot_running == 0.
+    bot_timer = 0.
+<
+
+#update_bot(dt) >
+    bot_timer = bot_timer + dt.
+    
+    << 0 when bot_timer lt bot_step_delay.
+    
+    bot_timer = 0.
+    /bot_step/.
+<
+
