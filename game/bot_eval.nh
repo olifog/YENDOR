@@ -254,6 +254,11 @@
     << /bot_builtin_look/args/env when /ds_streq/name/"look".
     << /bot_builtin_can_walk/args/env when /ds_streq/name/"can_walk".
     << /bot_builtin_print/args/env when /ds_streq/name/"print".
+    << /bot_builtin_strcat/args/env when /ds_streq/name/"strcat".
+    << /bot_builtin_rng_int/args/env when /ds_streq/name/"rng_int".
+
+    // Vision APIs
+    << /bot_builtin_check_surroundings/args/env when /ds_streq/name/"check_surroundings".
     
     // State APIs
     << /bot_builtin_get_hp/args/env when /ds_streq/name/"get_hp".
@@ -404,8 +409,8 @@
         TAG_GT => (/bot_eval/node->a/env gt /bot_eval/node->b/env)
         TAG_LE => (/bot_eval/node->a/env le /bot_eval/node->b/env)
         TAG_GE => (/bot_eval/node->a/env ge /bot_eval/node->b/env)
-        TAG_EQ => (/bot_eval/node->a/env == /bot_eval/node->b/env)
-        TAG_NE => (/bot_eval/node->a/env != /bot_eval/node->b/env)
+        TAG_EQ => /bot_eval_eq/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)
+        TAG_NE => (not /bot_eval_eq/(/bot_eval/node->a/env)/(/bot_eval/node->b/env))
         TAG_AND => (/bot_eval/node->a/env and /bot_eval/node->b/env)
         TAG_OR => (/bot_eval/node->a/env or /bot_eval/node->b/env)
         TAG_NOT => (not /bot_eval/node->a/env)
@@ -426,6 +431,19 @@
         TAG_LAMBDA => /bot_eval_lambda/node/env
         _ => 0
     <.
+<
+
+// Equality helper (handles strings)
+#bot_eval_eq(a, b) >
+    // Check if both are strings
+    is_str_a := /ds_is_string_like/a.
+    is_str_b := /ds_is_string_like/b.
+    
+    // If both are strings, use string equality
+    << /ds_streq/a/b when is_str_a == 1 and is_str_b == 1.
+    
+    // Otherwise use primitive equality
+    << (a == b).
 <
 
 // ============================================================================
@@ -503,6 +521,14 @@
     << val.
 <
 
+
+// /strcat/a/b - Concatenate two strings
+#bot_builtin_strcat(args, env) >
+    a := /bot_eval/(/ds_list_get/args/0)/env.
+    b := /bot_eval/(/ds_list_get/args/1)/env.
+    << /ds_string_concat/a/b.
+<
+
 // /get_hp/ - Get current HP
 #bot_builtin_get_hp(args, env) >
     << player_hp.
@@ -521,5 +547,77 @@
 // /get_level/ - Get current Dungeon Level
 #bot_builtin_get_level(args, env) >
     << dungeon_level.
+<
+// /rng_int/max - Returns random integer 0..max-1
+#bot_builtin_rng_int(args, env) >
+    max := /bot_eval/(/ds_list_get/args/0)/env.
+    << /rng_int/max.
+<
+
+// /check_surroundings/ - Returns 3x3 grid of char codes
+// [[NW, N, NE], [W, C, E], [SW, S, SE]]
+#bot_builtin_check_surroundings(args, env) >
+    grid := /ds_list_create/.
+    
+    // Iterate rows (dy: -1 to 1)
+    py := player_y.
+    px := player_x.
+    
+    for dy_offset in 0..3 >
+        dy := dy_offset - 1.
+        row := /ds_list_create/.
+        
+        for dx_offset in 0..3 >
+            dx := dx_offset - 1.
+            
+            ax := px + dx.
+            ay := py + dy.
+            
+            // Default: Empty/Void
+            char_code := 0. 
+            
+            // 1. Check Entity
+            e_idx := /get_entity_at/ax/ay.
+            
+            // 2. Check Tile
+            tile := /get_tile/ax/ay.
+            
+            // Priority Logic
+            done := 0.
+            
+            // Monster?
+            is_mon := 0.
+            is_mon = 1 when e_idx != -1.
+            // Convert char code to string
+            char_code = /ds_char_to_string/entity_type[e_idx] when is_mon == 1.
+            done = 1 when is_mon == 1.
+            
+            // Gold?
+            is_gold := 0.
+            is_gold = 1 when tile == TILE_GOLD.
+            char_code = "$" when is_gold == 1 and done == 0. // '$'
+            done = 1 when is_gold == 1.
+            
+            // Stairs?
+            is_stairs := 0.
+            is_stairs = 1 when tile == TILE_STAIRS.
+            char_code = ">" when is_stairs == 1 and done == 0. // '>'
+            done = 1 when is_stairs == 1.
+            
+            // Terrain Fallback
+            // Map tiles to strings (only if not done)
+            char_code = "." when tile == TILE_FLOOR and done == 0.      // '.'
+            char_code = "#" when tile == TILE_CORRIDOR and done == 0.   // '#'
+            char_code = "-" when tile == TILE_WALL_H and done == 0.     // '-'
+            char_code = "|" when tile == TILE_WALL_V and done == 0.     // '|'
+            char_code = "+" when tile == TILE_DOOR and done == 0.       // '+'
+            // Empty maps to 0
+            
+            /ds_list_push/row/char_code.
+        <
+        /ds_list_push/grid/row.
+    <
+    
+    << grid.
 <
 

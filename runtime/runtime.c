@@ -173,9 +173,9 @@ Value ds_is_string_like(Value val) {
   // Heuristic: Check if value is likely a pointer to a string
 
   // 1. Value range check
-  // Object handles, list handles, and small ints are usually < 100000
+  // Object handles, list handles, and small ints are usually < 65536
   // Pointers in Emscripten/WASM usually start higher
-  if (val < 100000)
+  if (val < 65536)
     return 0;
 
   // 2. Content check (Unsafe but best effort for debug)
