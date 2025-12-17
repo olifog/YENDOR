@@ -108,6 +108,8 @@
         11 => /parse_paren/tokens/pos // LPAREN
         21 => // TOK_NOT
             /parse_not/tokens/pos
+        4 => // TOK_MINUS (Unary)
+            /parse_neg/tokens/pos
         6 => // TOK_SLASH - function call in expression context
             /parse_call_expr/tokens/pos
         38 => // TOK_UNDER - wildcard
@@ -187,6 +189,12 @@
     pos = pos + 1. // Skip not
     res := /parse_primary/tokens/pos.
     << { node: /not_op/res->node, end: res->end }.
+<
+
+#parse_neg(tokens, pos) >
+    pos = pos + 1. // Skip -
+    res := /parse_primary/tokens/pos.
+    << { node: /neg_op/res->node, end: res->end }.
 <
 
 #parse_factor(tokens, pos) >

@@ -1,0 +1,190 @@
+// combat.nh - Combat math and logic
+// ============================================================================
+
+// ============================================================================
+// Core Math
+// ============================================================================
+
+#roll_d20() >
+    << /rng_int/20 + 1.
+<
+
+#roll_damage(sides, bonus) >
+    dmg := /rng_int/sides + 1 + bonus.
+    << dmg.
+<
+
+#check_hit(roll, target_ac, level, bonus) >
+    // Nethack formula variation: Hit if Roll < TargetNumber
+    // TargetNumber = 10 + AC + Level
+    
+    // Adjust AC for negative (random DR logic handled in damage, but AC affects hit)
+    // For hit calc, use actual AC.
+    
+    target_num := 10 + target_ac + level + bonus.
+    
+    // Automatic hit on nat 1? Automatic miss on 20? 
+    // Let's keep it simple: strict comparison.
+    
+    is_hit := 0.
+    is_hit = 1 when roll lt target_num.
+    
+    // Always hit if rolled 1 (1 is low in d20, so it matches logic < target)
+    // Actually in d20 system usually High is good. 
+    // Nethack uses THAC0 style or d20 <= AC+LVL? 
+    // "roll d20. If result < (10 + AC + LVL), hit."
+    // So LOW roll is BAD if we want to roll UNDER high target?
+    // Wait.
+    // Target = 10 + 10(AC) + 1 = 21. Rolling d20(1..20) is always < 21. Hits always.
+    // Target = 10 + 0(AC) + 1 = 11. Rolling 1..10 hits. 50%.
+    // Target = 10 + -10(AC) + 1 = 1. Rolling 1 hits (only if < strictly??). 
+    // Let's use <=.
+    
+    is_hit = 1 when roll le target_num.
+    
+    << is_hit.
+<
+
+#apply_dr(damage, ac) >
+    // Negative AC reduces damage
+    dmg := damage.
+    
+    reduction := 0.
+    // If ac < 0, roll reduction 0..abs(ac)
+    abs_ac := 0 - ac.
+    reduction = /rng_int/abs_ac when ac lt 0.
+    
+    dmg = dmg - reduction.
+    dmg = 1 when dmg lt 1. // Minimum 1 damage (if hit)
+    
+    << dmg.
+<
+
+// ============================================================================
+// Resolution
+// ============================================================================
+
+#resolve_player_attack(entity_idx) >
+    // Gather stats
+    mon_ac := entity_ac[entity_idx].
+    mon_hp := entity_hp[entity_idx].
+    mon_type := entity_type[entity_idx].
+    
+    // Player Stats
+    // Str bonus: 18/00 is +6. Let's approx based on str/exc.
+    str_bonus := 0.
+    str_bonus = 1 when player_str gt 15.
+    str_bonus = 2 when player_str == 18.
+    str_bonus = 3 when player_str == 18 and player_str_exc gt 50.
+    str_bonus = 6 when player_str == 18 and player_str_exc == 100. // 18/00
+    
+    hit_bonus := 0.
+    // Dex bonus? Level bonus?
+    hit_bonus = hit_bonus + 1 when player_dex gt 14.
+    hit_bonus = hit_bonus + player_xp_level.
+    
+    // 1. To Hit
+    roll := /roll_d20/.
+    // Monster Level? Let's use 0 for player attacking monster target number? 
+    // Or does Player Level help hit? Yes added to bonus.
+    // Target Number uses Monster AC. Monster Level is usually for Monster hitting Player.
+    // But for Player hitting Monster? formula is essentially d20 + Bonus >= AC?
+    // Let's stick to the "Roll Under 10+AC+Lvl" formula but inversely?
+    // actually standard method: Attack Roll (d20 + bonuses) vs AC.
+    // Nethack: "d20 < 10 + AC + Level"?
+    // If Player attacks: d20 < 10 + MonAC + PlayerLevel + Bonus.
+    
+    did_hit := /check_hit/roll/mon_ac/player_xp_level/hit_bonus.
+    
+    mon_name := "monster".
+    mon_name = "kobold" when mon_type == ENTITY_KOBOLD.
+    mon_name = "goblin" when mon_type == ENTITY_GOBLIN.
+    
+    // 2. Damage
+    dmg := 0.
+    dmg = /roll_damage/6/str_bonus when did_hit == 1. // Use d6 for now (sword)
+    
+    // DR?
+    dmg = /apply_dr/dmg/mon_ac when did_hit == 1.
+    
+    // 3. Apply
+    mon_hp = mon_hp - dmg.
+    entity_hp[entity_idx] = mon_hp.
+    
+    // 4. Message
+    // Make parts
+    msg := /ds_string_concat/"You miss the "/mon_name.
+    msg = /ds_string_concat/msg/"." when 1.
+    
+    msg_hit := /ds_string_concat/"You hit the "/mon_name.
+    msg_hit = /ds_string_concat/msg_hit/"!" when 1.
+    
+    msg = msg_hit when did_hit == 1.
+    
+    // /console_log/msg.
+    
+    // Death?
+    killed := 0.
+    // We handle death cleanup in update_monsters or here?
+    // Better here to print message.
+    killed = 1 when mon_hp le 0.
+    
+    // Die message
+    die_prefix := " The ".
+    die_mid := /ds_string_concat/die_prefix/mon_name.
+    die_full := /ds_string_concat/die_mid/" dies.".
+    
+    msg = /ds_string_concat/msg/die_full when killed == 1.
+    
+    // /console_log/"Monster died!" when killed == 1.
+    
+    // Deactivate if dead
+    entity_active[entity_idx] = 0 when killed == 1.
+    
+    // Add XP?
+    player_xp_points = player_xp_points + entity_level[entity_idx] * 5 when killed == 1.
+    
+    /append_message/msg.
+<
+
+#resolve_monster_attack(entity_idx) >
+    // Gather stats
+    mon_hit_bonus := entity_hit_bonus[entity_idx].
+    mon_lvl := entity_level[entity_idx].
+    mon_dmg_die := entity_dmg_die[entity_idx]. // 1 (number of dice) - wait, simplified to just sides
+    mon_dmg_sides := entity_dmg_sides[entity_idx].
+    mon_type := entity_type[entity_idx].
+    
+    mon_name := "monster".
+    mon_name = "kobold" when mon_type == ENTITY_KOBOLD.
+    mon_name = "goblin" when mon_type == ENTITY_GOBLIN.
+    name_cap := "Monster".
+    name_cap = "The kobold" when mon_type == ENTITY_KOBOLD.
+    name_cap = "The goblin" when mon_type == ENTITY_GOBLIN.
+    
+    // 1. To Hit
+    // Monster attacking Player
+    // Roll < 10 + PlayerAC + MonLevel
+    roll := /roll_d20/.
+    did_hit := /check_hit/roll/player_ac/mon_lvl/mon_hit_bonus.
+    
+    // 2. Damage
+    dmg := 0.
+    dmg = /roll_damage/mon_dmg_sides/0 when did_hit == 1.
+    
+    // DR for player
+    dmg = /apply_dr/dmg/player_ac when did_hit == 1.
+    
+    // 3. Apply
+    player_hp = player_hp - dmg.
+    
+    // 4. Message
+    msg := /ds_string_concat/name_cap/" misses.".
+    msg = /ds_string_concat/name_cap/" hits!" when did_hit == 1.
+    
+    // Append
+    /append_message/msg.
+    
+    // Player Death handled in main loop or update?
+    // Just HP reduction here.
+<

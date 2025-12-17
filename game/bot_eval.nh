@@ -389,6 +389,7 @@
         TAG_DECL => /bot_eval_decl/node/env
         TAG_SEQ => /bot_eval_seq/node/env
         TAG_ASSIGN => /bot_eval_assign/node/env
+        TAG_NEG => 0 - /bot_eval/node->a/env
         TAG_SUB => /bot_eval/node->a/env - /bot_eval/node->b/env
         TAG_MUL => /bot_eval/node->a/env * /bot_eval/node->b/env
         TAG_DIV => /ds_div/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)

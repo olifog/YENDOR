@@ -19,6 +19,11 @@ entity_y := [].
 entity_type := []. // Char code
 entity_active := []. // 0 or 1
 entity_hp := [].
+entity_ac := [].
+entity_level := [].
+entity_hit_bonus := [].
+entity_dmg_die := [].
+entity_dmg_sides := [].
 
 // ============================================================================
 // Management
@@ -31,6 +36,11 @@ entity_hp := [].
         entity_y[i] = 0.
         entity_type[i] = 0.
         entity_hp[i] = 0.
+        entity_ac[i] = 0.
+        entity_level[i] = 0.
+        entity_hit_bonus[i] = 0.
+        entity_dmg_die[i] = 0.
+        entity_dmg_sides[i] = 0.
     <
 <
 
@@ -60,11 +70,29 @@ entity_hp := [].
     entity_y[slot] = y when valid == 1.
     entity_type[slot] = type_char when valid == 1.
     
-    // Set HP based on type (simple logic for now)
-    hp := 10.
+    // Set HP and Combat Stats based on type
+    hp := 1.
+    ac := 10.
+    lvl := 1.
+    hit_bonus := 0.
+    dmg_die := 1.
+    dmg_sides := 4.
+    
+    // Kobold: HP 5, AC 10, Lvl 1, +0, 1d4
     hp = 5 when type_char == ENTITY_KOBOLD.
+    dmg_sides = 4 when type_char == ENTITY_KOBOLD.
+    
+    // Goblin: HP 8, AC 10, Lvl 2, +0, 1d6
     hp = 8 when type_char == ENTITY_GOBLIN.
+    lvl = 2 when type_char == ENTITY_GOBLIN.
+    dmg_sides = 6 when type_char == ENTITY_GOBLIN.
+    
     entity_hp[slot] = hp when valid == 1.
+    entity_ac[slot] = ac when valid == 1.
+    entity_level[slot] = lvl when valid == 1.
+    entity_hit_bonus[slot] = hit_bonus when valid == 1.
+    entity_dmg_die[slot] = dmg_die when valid == 1.
+    entity_dmg_sides[slot] = dmg_sides when valid == 1.
     
     << slot.
 <
@@ -148,4 +176,40 @@ entity_hp := [].
         
         /spawn_entity/type/sx/sy when found == 1.
     <
+<
+
+#update_monsters() >
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        // Only process active monsters
+        continue_loop := 0.
+        continue_loop = 1 when active == 0.
+        
+        /process_monster/i when active == 1.
+    <
+<
+
+#process_monster(idx) >
+    ex := entity_x[idx].
+    ey := entity_y[idx].
+    
+    // Calc dist to player
+    dx := player_x - ex.
+    dy := player_y - ey.
+    
+    // Check adjacency (attack)
+    abs_dx := dx.
+    abs_dx = 0 - dx when dx lt 0.
+    abs_dy := dy.
+    abs_dy = 0 - dy when dy lt 0.
+    
+    // Check if within 1 tile (diagonal counts)
+    is_close_x := 0.
+    is_close_x = 1 when abs_dx le 1.
+    is_close_y := 0.
+    is_close_y = 1 when abs_dy le 1.
+    is_adjacent := is_close_x * is_close_y.
+    
+    // Attack if adjacent
+    /resolve_monster_attack/idx when is_adjacent == 1.
 <

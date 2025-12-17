@@ -1,5 +1,4 @@
 // dungeon.nh - Dungeon map data and procedural generation
-@use "entity.nh".
 
 // ============================================================================
 // Map Constants

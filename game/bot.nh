@@ -172,10 +172,12 @@ bot_has_print := 0.        // 1 if there's a value to display
     /bot_reset_on_change/ when bot_is_stepping == 1.
 <
 
+bot_message := "".
+
 #bot_set_error(msg) >
     bot_error = msg.
     bot_has_error = 1.
-    last_message = msg.
+    bot_message = msg.
     << 0.
 <
 
@@ -200,7 +202,8 @@ bot_has_print := 0.        // 1 if there's a value to display
     bot_loop_body_idx = 0.
     bot_ops_count = 0.
     bot_current_line = bot_stmt_lines[0] when bot_stmt_count gt 0.
-    last_message = "Bot running...".
+    bot_message = "Bot running...".
+    last_message = "". // Clear welcome message
 <
 
 #bot_stop() >
@@ -219,7 +222,8 @@ bot_has_print := 0.        // 1 if there's a value to display
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
-    last_message = "Bot stopped.".
+    // last_message = "Bot stopped.". // Removed to prevent duplicate
+    bot_message = "Bot stopped.".
 <
 
 #bot_step_once() >
@@ -241,12 +245,12 @@ bot_has_print := 0.        // 1 if there's a value to display
     
     // Show print output if any
     /bot_show_print/ when bot_has_print == 1.
-    last_message = "Step executed." when bot_has_print == 0.
+    bot_message = "Step executed." when bot_has_print == 0.
 <
 
 #bot_show_print() >
     // Display the printed value - keep bot_has_print set for render
-    last_message = "Print:".
+    bot_message = "Print:".
 <
 
 // Shared core: execute one statement and handle side effects
@@ -462,15 +466,9 @@ bot_has_print := 0.        // 1 if there's a value to display
     bot_step_count = bot_step_count + 1.
 <
 
-#bot_finished_message() >
-    last_message = "Program finished.".
-    // Keep indicator on the last executed line - don't clear it
-    // Reset state so clicking play/step starts fresh
-    bot_is_running = 0.
-    bot_is_stepping = 0.
-    bot_stmt_index = 0.
-    << 0.
-<
+
+// Old definition removed
+
 
 #bot_run_tick() >
     << 0 when bot_is_running == 0.
@@ -485,6 +483,15 @@ bot_has_print := 0.        // 1 if there's a value to display
     
     // Execute one step (shared with bot_step_once)
     /bot_do_step/.
+<
+
+#bot_finished_message() >
+    bot_is_running = 0.
+    bot_is_stepping = 0.
+    bot_current_line = 0 - 1.
+    // Reset message
+    bot_message = "Program Complete.".
+    << 0.
 <
 
 #bot_handle_stairs() >

@@ -38,6 +38,7 @@ TAG_FIELD := 36.      // Object field (key-value pair)
 TAG_PROP := 37.       // Property access (obj->key)
 TAG_LAMBDA := 38.     // Lambda expression \(x) => expr
 TAG_INVOKE := 39.     // Lambda invocation expr/(args)
+TAG_NEG := 40.        // Unary negation
 
 // AST Constructors
 #lit(value) => { tag: TAG_LIT, value: value }.
@@ -47,6 +48,7 @@ TAG_INVOKE := 39.     // Lambda invocation expr/(args)
 #mul(a, b)  => { tag: TAG_MUL, a: a, b: b }.
 #ast_div(a, b)  => { tag: TAG_DIV, a: a, b: b }.
 #mod(a, b)  => { tag: TAG_MOD, a: a, b: b }.
+#neg_op(a)  => { tag: TAG_NEG, a: a }.
 #lt_op(a, b)   => { tag: TAG_LT, a: a, b: b }.
 #gt_op(a, b)   => { tag: TAG_GT, a: a, b: b }.
 #le_op(a, b)   => { tag: TAG_LE, a: a, b: b }.

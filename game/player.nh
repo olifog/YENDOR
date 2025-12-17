@@ -41,7 +41,24 @@ player_prev_x := 5.
 player_prev_y := 4.
 
 // Message
+// Message
 last_message := "Write code to control @. Click Play to run.".
+last_message_buffer := "".
+
+#clear_message() >
+    last_message_buffer = "".
+<
+
+#append_message(msg) >
+    // Add space if buffer not empty
+    len := /ds_strlen/last_message_buffer.
+    last_message_buffer = /ds_string_concat/last_message_buffer/" " when len gt 0.
+    last_message_buffer = /ds_string_concat/last_message_buffer/msg.
+    
+    // Update display immediately? Or wait for end of turn?
+    // Let's update display too so we see it.
+    last_message = last_message_buffer.
+<
 
 // ============================================================================
 // Movement
@@ -57,34 +74,72 @@ last_message := "Write code to control @. Click Play to run.".
 <
 
 #try_move(dx, dy) >
+    // 1. Clear message buffer for this turn
+    /clear_message/.
+    
     new_x := player_x + dx.
     new_y := player_y + dy.
     
+    // Check for monster (Attack)
+    monster_idx := /get_entity_at/new_x/new_y.
+    
+    // If monster exists, Attack!
+    did_attack := 0.
+    did_attack = 1 when monster_idx != -1.
+    
+    // /console_log/"Player attacking monster!" when did_attack == 1.
+    // /console_log_int/monster_idx when did_attack == 1.
+    /resolve_player_attack/monster_idx when did_attack == 1.
+    
+    // If no monster, Try Move
+    did_move := 0.
     tile := /get_tile/new_x/new_y.
     walkable := /can_walk/tile.
+    can_move := walkable * (1 - did_attack).
     
-    << 0 when walkable == 0.
-    
+    // Move Logic
     // Collect gold
-    last_message = "You pick up gold!" when tile == TILE_GOLD.
-    player_gold = player_gold + /rng_int/20 + 5 when tile == TILE_GOLD.
-    /spawn_particles/new_x/new_y when tile == TILE_GOLD.
-    /set_tile/new_x/new_y/TILE_FLOOR when tile == TILE_GOLD.
+    gold_msg := "You pick up gold!".
+    /append_message/gold_msg when can_move == 1 and tile == TILE_GOLD.
+    player_gold = player_gold + /rng_int/20 + 5 when can_move == 1 and tile == TILE_GOLD.
+    /spawn_particles/new_x/new_y when can_move == 1 and tile == TILE_GOLD.
+    /set_tile/new_x/new_y/TILE_FLOOR when can_move == 1 and tile == TILE_GOLD.
     
     // Stairs
-    last_message = "You found the stairs! Level complete!" when tile == TILE_STAIRS.
+    stairs_msg := "You found the stairs!".
+    /append_message/stairs_msg when can_move == 1 and tile == TILE_STAIRS.
     
-    // Save previous position for animation
-    player_prev_x = player_x.
-    player_prev_y = player_y.
+    // Save prev pos
+    player_prev_x = player_x when can_move == 1.
+    player_prev_y = player_y when can_move == 1.
     
-    player_x = new_x.
-    player_y = new_y.
-    // Scale animation duration with speed (faster speed = shorter animation)
+    player_x = new_x when can_move == 1.
+    player_y = new_y when can_move == 1.
+    
+    // Anim
     anim_duration_scaled = ANIM_DURATION / speed_multiplier.
     anim_duration_scaled = 5 when anim_duration_scaled lt 5.
-    anim_timer = anim_duration_scaled.
+    anim_timer = anim_duration_scaled when can_move == 1.
+    
+    did_action := did_attack + can_move.
+    
+    // If we did nothing (blocked wall), return 0
+    << 0 when did_action == 0.
+    
+    // 2. Player Action Complete. Increment Turns.
     turns = turns + 1.
+    
+    // 3. Monster Turn
+    /update_monsters/.
+    
+    // 4. Finalize Message
+    // If buffer is empty (just walked), show nothing or status?
+    // "You preserve the silence." ? No, keep old message or nothing?
+    // If buffer empty, maybe don't overwrite? Or overwrite with empty?
+    // User wants concatenated messages.
+    // If buffer is NOT empty, show it.
+    buffer_len := /ds_strlen/last_message_buffer.
+    last_message = last_message_buffer when buffer_len gt 0.
     
     << 1.
 <

@@ -3,11 +3,12 @@
 
 @use "bgshader.nh".
 @use "editor.nh".
-@use "dungeon.nh".
 @use "player.nh".
+@use "entity.nh".
+@use "dungeon.nh".
 @use "render.nh".
 @use "particles.nh".
-@use "entity.nh".
+@use "combat.nh".
 @use "bot.nh".
 
 // ============================================================================

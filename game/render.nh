@@ -86,9 +86,16 @@ COL_GREEN_B := 100.
     msg_y := map_offset_y + MAP_HEIGHT * TILE_H + 60.
     /text_draw/map_offset_x/msg_y/14/COL_WHITE_R/COL_WHITE_G/COL_WHITE_B/last_message.
     
-    // Show print value below message (yellow color: 255, 220, 80)
-    /text_draw/(map_offset_x)/(msg_y + 20)/12/255/220/80/"Print:" when bot_has_print == 1.
-    /text_draw_int/(map_offset_x + 55)/(msg_y + 20)/12/255/220/80/bot_print_buffer when bot_has_print == 1.
+    // Bot Message (below game message)
+    bot_msg_y := msg_y + 20.
+    bot_msg_len := /ds_strlen/bot_message.
+    // Cyan color for bot status
+    /text_draw/map_offset_x/bot_msg_y/14/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/bot_message when bot_msg_len gt 0.
+    
+    // Show print value below bot message (yellow color: 255, 220, 80)
+    print_y := bot_msg_y + 20.
+    /text_draw/(map_offset_x)/print_y/12/255/220/80/"Print:" when bot_has_print == 1.
+    /text_draw_int/(map_offset_x + 55)/print_y/12/255/220/80/bot_print_buffer when bot_has_print == 1.
     
     // Header
     /text_draw/map_offset_x/dungeon_y/12/COL_CYAN_R/COL_CYAN_G/COL_CYAN_B/"[DUNGEON]".
