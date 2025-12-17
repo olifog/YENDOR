@@ -255,6 +255,12 @@
     << /bot_builtin_can_walk/args/env when /ds_streq/name/"can_walk".
     << /bot_builtin_print/args/env when /ds_streq/name/"print".
     
+    // State APIs
+    << /bot_builtin_get_hp/args/env when /ds_streq/name/"get_hp".
+    << /bot_builtin_get_max_hp/args/env when /ds_streq/name/"get_max_hp".
+    << /bot_builtin_get_gold/args/env when /ds_streq/name/"get_gold".
+    << /bot_builtin_get_level/args/env when /ds_streq/name/"get_level".
+    
     // Look up user-defined function
     func := /bot_env_get/env/name.
     
@@ -476,5 +482,25 @@
     bot_has_print = 1.
     
     << val.
+<
+
+// /get_hp/ - Get current HP
+#bot_builtin_get_hp(args, env) >
+    << player_hp.
+<
+
+// /get_max_hp/ - Get max HP
+#bot_builtin_get_max_hp(args, env) >
+    << player_max_hp.
+<
+
+// /get_gold/ - Get current Gold
+#bot_builtin_get_gold(args, env) >
+    << player_gold.
+<
+
+// /get_level/ - Get current Dungeon Level
+#bot_builtin_get_level(args, env) >
+    << dungeon_level.
 <
 
