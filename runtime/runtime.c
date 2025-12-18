@@ -17,6 +17,296 @@
 #include <time.h>
 
 // ============================================================================
+// Garbage Collector
+// ============================================================================
+
+#define GC_MAX_ALLOCATIONS 131072 // Max tracked allocations
+
+typedef enum {
+  GC_TYPE_STRING,      // Heap-allocated string
+  GC_TYPE_LIST_ITEMS,  // List items array
+  GC_TYPE_FLOAT_BUFFER // Float buffer data
+} GcAllocType;
+
+typedef struct {
+  void *ptr;        // Pointer to allocated memory
+  GcAllocType type; // Type of allocation
+  int marked;       // Mark bit for current GC cycle
+  int in_use;       // Is this slot in use?
+} GcAllocation;
+
+static GcAllocation gc_allocations[GC_MAX_ALLOCATIONS];
+static int gc_initialized = 0;
+static int gc_allocation_count = 0;
+static int gc_threshold = 1000;    // Trigger GC after this many allocations
+static int gc_next_alloc_slot = 0; // Cursor for next-fit allocation
+
+// IMPORTANT: GC requires roots to be registered. Compiled nh code stores
+// strings in C global variables and arrays. These MUST be registered via
+// gc_register_root_array() and gc_register_root_value() for safe collection.
+
+// Root array registry - for arrays like editor_lines[]
+#define GC_MAX_ROOT_ARRAYS 1024
+
+typedef struct {
+  Value *array; // Pointer to array start
+  int size;     // Number of elements
+  int in_use;
+} GcRootArray;
+
+static GcRootArray gc_root_arrays[GC_MAX_ROOT_ARRAYS];
+
+// Root value registry - for single globals like vim_yank_buffer
+#define GC_MAX_ROOT_VALUES 1024
+
+static Value *gc_root_values[GC_MAX_ROOT_VALUES];
+static int gc_root_value_count = 0;
+
+// Register an array as a GC root (called from generated code)
+void gc_register_root_array(Value *array, int size) {
+  for (int i = 0; i < GC_MAX_ROOT_ARRAYS; i++) {
+    if (!gc_root_arrays[i].in_use) {
+      gc_root_arrays[i].array = array;
+      gc_root_arrays[i].size = size;
+      gc_root_arrays[i].in_use = 1;
+      return;
+    }
+  }
+}
+
+// Register a single value as a GC root (called from generated code)
+void gc_register_root_value(Value *value_ptr) {
+  if (gc_root_value_count < GC_MAX_ROOT_VALUES) {
+    gc_root_values[gc_root_value_count++] = value_ptr;
+  } else {
+    printf("[GC ERROR] gc_register_root_value: capacity exceeded! Max=%d\n",
+           GC_MAX_ROOT_VALUES);
+  }
+}
+
+// ============================================================================
+// Execution Stack Protection
+// Protects temporary environments (e.g., function call envs) during execution
+// ============================================================================
+
+#define GC_MAX_EXEC_STACK 512
+
+static Value gc_exec_stack[GC_MAX_EXEC_STACK];
+static int gc_exec_stack_depth = 0;
+
+// Push an environment onto the execution stack to protect it from GC
+void gc_push_env(Value env) {
+  if (gc_exec_stack_depth < GC_MAX_EXEC_STACK) {
+    gc_exec_stack[gc_exec_stack_depth++] = env;
+  }
+}
+
+// Pop an environment from the execution stack
+void gc_pop_env(void) {
+  if (gc_exec_stack_depth > 0) {
+    gc_exec_stack_depth--;
+  }
+}
+
+// Clear the execution stack (call when interpreter stops)
+void gc_clear_exec_stack(void) { gc_exec_stack_depth = 0; }
+
+// Clear a root array (set all elements to 0 so GC can collect old objects)
+void gc_clear_array(Value *array, Value size_val) {
+  int size = AS_INT(size_val);
+  for (int i = 0; i < size; i++) {
+    array[i] = 0;
+  }
+}
+
+static void gc_init(void) {
+  if (gc_initialized)
+    return;
+  memset(gc_allocations, 0, sizeof(gc_allocations));
+  gc_initialized = 1;
+}
+
+// Forward declarations for hash table (defined after gc_alloc)
+static void gc_hash_insert(void *ptr, int slot);
+static void gc_hash_remove(void *ptr);
+
+// Register an allocation with the GC
+static void *gc_alloc(size_t size, GcAllocType type) {
+  gc_init();
+
+  void *ptr = malloc(size);
+  if (!ptr)
+    return NULL;
+
+  // Find a free slot (Next Fit strategy for O(1) amortized)
+  int start_slot = gc_next_alloc_slot;
+  int i = start_slot;
+
+  do {
+    if (!gc_allocations[i].in_use) {
+      gc_allocations[i].ptr = ptr;
+      gc_allocations[i].type = type;
+      gc_allocations[i].marked = 0;
+      gc_allocations[i].in_use = 1;
+      gc_allocation_count++;
+      gc_hash_insert(ptr, i); // Add to hash table
+
+      // Update cursor for next time
+      gc_next_alloc_slot = (i + 1) % GC_MAX_ALLOCATIONS;
+      return ptr;
+    }
+    i = (i + 1) % GC_MAX_ALLOCATIONS;
+  } while (i != start_slot);
+
+  // No slots available, just leak (safety over efficiency)
+  return ptr;
+}
+
+// ============================================================================
+// Hash table for fast pointer -> slot lookup
+// ============================================================================
+
+#define GC_HASH_SIZE 262144 // Must be power of 2, and > GC_MAX_ALLOCATIONS
+
+typedef struct {
+  void *ptr;
+  int slot;
+} GcHashEntry;
+
+static GcHashEntry gc_hash_table[GC_HASH_SIZE];
+static int gc_hash_initialized = 0;
+
+static void gc_hash_init(void) {
+  if (gc_hash_initialized)
+    return;
+  memset(gc_hash_table, 0, sizeof(gc_hash_table));
+  gc_hash_initialized = 1;
+}
+
+static unsigned int gc_hash_ptr(void *ptr) {
+  // Better mixing function for pointer hashing
+  uintptr_t x = (uintptr_t)ptr;
+  x = (x ^ (x >> 16)) * 0x45d9f3b;
+  x = (x ^ (x >> 16)) * 0x45d9f3b;
+  x = x ^ (x >> 16);
+  return (unsigned int)(x & (GC_HASH_SIZE - 1));
+}
+
+static void gc_hash_insert(void *ptr, int slot) {
+  gc_hash_init();
+  unsigned int h = gc_hash_ptr(ptr);
+  // Linear probing
+  for (int i = 0; i < GC_HASH_SIZE; i++) {
+    unsigned int idx = (h + i) & (GC_HASH_SIZE - 1);
+    if (gc_hash_table[idx].ptr == NULL || gc_hash_table[idx].ptr == ptr) {
+      gc_hash_table[idx].ptr = ptr;
+      gc_hash_table[idx].slot = slot;
+      return;
+    }
+  }
+  // Hash table full - shouldn't happen if GC_HASH_SIZE >= GC_MAX_ALLOCATIONS
+}
+
+static void gc_hash_remove(void *ptr) {
+  unsigned int h = gc_hash_ptr(ptr);
+  int found_idx = -1;
+  for (int i = 0; i < GC_HASH_SIZE; i++) {
+    unsigned int idx = (h + i) & (GC_HASH_SIZE - 1);
+    if (gc_hash_table[idx].ptr == ptr) {
+      found_idx = idx;
+      break;
+    }
+    if (gc_hash_table[idx].ptr == NULL) {
+      return; // Not found
+    }
+  }
+
+  if (found_idx == -1)
+    return;
+
+  // Clear the found slot
+  gc_hash_table[found_idx].ptr = NULL;
+  gc_hash_table[found_idx].slot = -1;
+
+  // Re-hash the following cluster to fill the hole
+  int j = found_idx;
+  while (1) {
+    j = (j + 1) & (GC_HASH_SIZE - 1);
+    if (gc_hash_table[j].ptr == NULL)
+      break;
+
+    void *rehash_ptr = gc_hash_table[j].ptr;
+    int rehash_slot = gc_hash_table[j].slot;
+    gc_hash_table[j].ptr = NULL;
+    gc_hash_table[j].slot = -1;
+    gc_hash_insert(rehash_ptr, rehash_slot);
+  }
+}
+
+// Find GC slot for a pointer using hash table (O(1) average)
+static int gc_find_slot(void *ptr) {
+  if (!ptr)
+    return -1;
+  gc_hash_init();
+  unsigned int h = gc_hash_ptr(ptr);
+  for (int i = 0; i < GC_HASH_SIZE; i++) {
+    unsigned int idx = (h + i) & (GC_HASH_SIZE - 1);
+    if (gc_hash_table[idx].ptr == ptr) {
+      // Verify the slot is still valid
+      int slot = gc_hash_table[idx].slot;
+      if (slot >= 0 && slot < GC_MAX_ALLOCATIONS &&
+          gc_allocations[slot].in_use && gc_allocations[slot].ptr == ptr) {
+        return slot;
+      }
+      return -1; // Stale entry
+    }
+    if (gc_hash_table[idx].ptr == NULL) {
+      return -1; // Not found
+    }
+  }
+  return -1;
+}
+
+// Mark a pointer as reachable
+static void gc_mark_ptr(void *ptr) {
+  int slot = gc_find_slot(ptr);
+  if (slot >= 0) {
+    gc_allocations[slot].marked = 1;
+  }
+}
+
+// Forward declarations for mark phase (defined later)
+static void gc_mark(void);
+static void gc_sweep(void);
+
+// Run a full GC cycle
+static void gc_collect(void) {
+  gc_mark();
+  gc_sweep();
+}
+
+// Check if GC should run
+static void gc_maybe_collect(void) {
+  if (gc_allocation_count >= gc_threshold) {
+    gc_collect();
+  }
+}
+
+// Public function to force a GC cycle (called when bot stops)
+void gc_force_collect(void) { gc_collect(); }
+
+// Unregister an allocation (for manual free)
+static void gc_unregister(void *ptr) {
+  int slot = gc_find_slot(ptr);
+  if (slot >= 0) {
+    gc_hash_remove(ptr); // Remove from hash table
+    gc_allocations[slot].in_use = 0;
+    gc_allocations[slot].ptr = NULL;
+    gc_allocation_count--;
+  }
+}
+
+// ============================================================================
 // IO
 // ============================================================================
 
@@ -35,7 +325,7 @@ Value time_ms(void) {
 // ============================================================================
 
 #define MAX_OBJECTS 65536
-#define MAX_PROPS 64
+#define MAX_PROPS 256
 
 typedef struct {
   char *key;
@@ -46,6 +336,7 @@ typedef struct {
   Property props[MAX_PROPS];
   int prop_count;
   int in_use;
+  int marked; // For GC
 } Object;
 
 static Object objects[MAX_OBJECTS];
@@ -63,6 +354,7 @@ static Value alloc_object(void) {
   for (int i = 1; i < MAX_OBJECTS; i++) {
     if (!objects[i].in_use) {
       objects[i].in_use = 1;
+      objects[i].marked = 0;
       objects[i].prop_count = 0;
       return VAL_INT(i);
     }
@@ -116,8 +408,9 @@ void ds_object_set(Value *obj, Value key_val, Value value) {
     *obj = handle_val;
   }
 
-  if (!objects[handle].in_use)
+  if (!objects[handle].in_use) {
     return;
+  }
 
   // Update existing
   for (int i = 0; i < objects[handle].prop_count; i++) {
@@ -130,7 +423,15 @@ void ds_object_set(Value *obj, Value key_val, Value value) {
   // Add new
   if (objects[handle].prop_count < MAX_PROPS) {
     int idx = objects[handle].prop_count++;
-    objects[handle].props[idx].key = strdup(key);
+    // Use gc_alloc instead of strdup for GC tracking
+    size_t key_len = strlen(key) + 1;
+    char *key_copy = gc_alloc(key_len, GC_TYPE_STRING);
+    if (key_copy) {
+      memcpy(key_copy, key, key_len);
+      objects[handle].props[idx].key = key_copy;
+    } else {
+      objects[handle].props[idx].key = NULL;
+    }
     objects[handle].props[idx].value = value;
   }
 }
@@ -211,10 +512,12 @@ Value ds_substring(Value str_val, Value start_val, Value len_val) {
     return VAL_OBJ("");
   if (start + len > (long)str_len)
     len = str_len - start;
-  char *sub = malloc(len + 1);
+  char *sub = gc_alloc(len + 1, GC_TYPE_STRING);
+  if (!sub)
+    return VAL_OBJ("");
   strncpy(sub, str + start, len);
   sub[len] = '\0';
-  return VAL_OBJ(sub); // Leaks memory, but fine for this demo
+  return VAL_OBJ(sub);
 }
 
 Value ds_string_at(Value str_val, Value index_val) {
@@ -240,7 +543,9 @@ Value ds_string_insert_char(Value str_val, Value pos_val, Value char_code_val) {
   if (pos > (long)len)
     pos = len;
 
-  char *result = malloc(len + 2);
+  char *result = gc_alloc(len + 2, GC_TYPE_STRING);
+  if (!result)
+    return str_val;
   strncpy(result, str, pos);
   result[pos] = (char)char_code;
   strcpy(result + pos + 1, str + pos);
@@ -257,7 +562,9 @@ Value ds_string_delete_char(Value str_val, Value pos_val) {
   if (pos < 0 || pos >= (long)len)
     return str_val;
 
-  char *result = malloc(len);
+  char *result = gc_alloc(len, GC_TYPE_STRING);
+  if (!result)
+    return str_val;
   strncpy(result, str, pos);
   strcpy(result + pos, str + pos + 1);
   return VAL_OBJ(result);
@@ -274,7 +581,9 @@ Value ds_string_concat(Value str1_val, Value str2_val) {
 
   size_t len1 = strlen(str1);
   size_t len2 = strlen(str2);
-  char *result = malloc(len1 + len2 + 1);
+  char *result = gc_alloc(len1 + len2 + 1, GC_TYPE_STRING);
+  if (!result)
+    return str1_val;
   strcpy(result, str1);
   strcpy(result + len1, str2);
   return VAL_OBJ(result);
@@ -283,7 +592,9 @@ Value ds_string_concat(Value str1_val, Value str2_val) {
 // Create a single-character string from char code
 Value ds_char_to_string(Value char_code_val) {
   long char_code = AS_INT(char_code_val);
-  char *result = malloc(2);
+  char *result = gc_alloc(2, GC_TYPE_STRING);
+  if (!result)
+    return VAL_OBJ("");
   result[0] = (char)char_code;
   result[1] = '\0';
   return VAL_OBJ(result);
@@ -300,6 +611,7 @@ typedef struct {
   int count;
   int capacity;
   int in_use;
+  int marked; // For GC
 } List;
 
 static List lists[MAX_LISTS];
@@ -317,9 +629,11 @@ Value ds_list_create(void) {
   for (int i = 1; i < MAX_LISTS; i++) {
     if (!lists[i].in_use) {
       lists[i].in_use = 1;
+      lists[i].marked = 0;
       lists[i].count = 0;
       lists[i].capacity = 16;
-      lists[i].items = (Value *)malloc(lists[i].capacity * sizeof(Value));
+      lists[i].items = (Value *)gc_alloc(lists[i].capacity * sizeof(Value),
+                                         GC_TYPE_LIST_ITEMS);
       return VAL_INT(i);
     }
   }
@@ -334,9 +648,22 @@ Value ds_list_push(Value list_val, Value value) {
     return VAL_INT(0);
 
   if (lists[list].count >= lists[list].capacity) {
-    lists[list].capacity *= 2;
-    lists[list].items = (Value *)realloc(lists[list].items,
-                                         lists[list].capacity * sizeof(Value));
+    // Allocate new larger buffer via GC
+    int new_capacity = lists[list].capacity * 2;
+    Value *new_items =
+        (Value *)gc_alloc(new_capacity * sizeof(Value), GC_TYPE_LIST_ITEMS);
+    if (new_items) {
+      // Copy old items
+      memcpy(new_items, lists[list].items, lists[list].count * sizeof(Value));
+      // Unregister old allocation from GC and free it
+      gc_unregister(lists[list].items);
+      free(lists[list].items);
+      lists[list].items = new_items;
+      lists[list].capacity = new_capacity;
+    } else {
+      // Allocation failed, cannot add item
+      return VAL_INT(0);
+    }
   }
   lists[list].items[lists[list].count++] = value;
   return VAL_INT(0);
@@ -664,7 +991,8 @@ Value buf_create_floats(Value count) {
     if (!float_buffers[i].in_use) {
       float_buffers[i].in_use = 1;
       float_buffers[i].count = c;
-      float_buffers[i].data = (float *)malloc(c * sizeof(float));
+      float_buffers[i].data =
+          (float *)gc_alloc(c * sizeof(float), GC_TYPE_FLOAT_BUFFER);
       return VAL_INT(i);
     }
   }
@@ -703,8 +1031,136 @@ void buf_free(Value buffer_handle) {
   if (!float_buffers[buf].in_use)
     return;
 
+  // Unregister from GC and free
+  gc_unregister(float_buffers[buf].data);
   free(float_buffers[buf].data);
   float_buffers[buf].in_use = 0;
+}
+
+// ============================================================================
+// GC Mark and Sweep Implementation
+// (Defined here after all data structures are declared)
+// ============================================================================
+
+// Recursive marker: handles both pointers (strings) and integer handles
+// (Objects/Lists) This is "Conservative GC" effectively, as we treat any
+// integer that *looks* like a handle as one.
+static void gc_mark_value(Value val) {
+  if (IS_OBJ(val)) {
+    // Pointer type (String)
+    gc_mark_ptr((void *)AS_OBJ(val));
+  } else {
+    // Integer type - could be an Object handle or List handle
+    long id = AS_INT(val);
+
+    // Check if it's a valid object handle
+    if (id > 0 && id < MAX_OBJECTS && objects[id].in_use &&
+        !objects[id].marked) {
+      objects[id].marked = 1;
+      // Recurse into properties
+      for (int i = 0; i < objects[id].prop_count; i++) {
+        gc_mark_value(objects[id].props[i].value); // Value (recursive)
+        // Keys are always strings (pointers)
+        if (objects[id].props[i].key) {
+          gc_mark_ptr(objects[id].props[i].key);
+        }
+      }
+    }
+
+    // Check if it's a valid list handle
+    // Note: An integer X could theoretically be both Object X and List X.
+    // In a dynamic untyped system with overlapping ID spaces, we must
+    // conservatively mark *both*.
+    if (id > 0 && id < MAX_LISTS && lists[id].in_use && !lists[id].marked) {
+      lists[id].marked = 1;
+      // Mark the backing array itself
+      if (lists[id].items) {
+        gc_mark_ptr(lists[id].items);
+      }
+      // Recurse into items
+      for (int i = 0; i < lists[id].count; i++) {
+        gc_mark_value(lists[id].items[i]);
+      }
+    }
+  }
+}
+
+static void gc_mark(void) {
+  // Mark collected roots
+
+  // 1. Registered root arrays (globals)
+  for (int i = 0; i < GC_MAX_ROOT_ARRAYS; i++) {
+    if (gc_root_arrays[i].in_use) {
+      for (int j = 0; j < gc_root_arrays[i].size; j++) {
+        gc_mark_value(gc_root_arrays[i].array[j]);
+      }
+    }
+  }
+
+  // 2. Registered root values (single globals)
+  for (int i = 0; i < gc_root_value_count; i++) {
+    if (gc_root_values[i]) {
+      Value val = *gc_root_values[i];
+      long id = AS_INT(val);
+      gc_mark_value(val);
+    }
+  }
+
+  // 3. Mark float buffer data
+  for (int i = 0; i < MAX_FLOAT_BUFFERS; i++) {
+    if (float_buffers[i].in_use) {
+      gc_mark_ptr(float_buffers[i].data);
+    }
+  }
+
+  // 4. Mark execution stack (temporary environments during function calls)
+  for (int i = 0; i < gc_exec_stack_depth; i++) {
+    gc_mark_value(gc_exec_stack[i]);
+  }
+}
+
+static void gc_sweep(void) {
+  // 1. Sweep Allocations (Strings, Backing Arrays)
+  for (int i = 0; i < GC_MAX_ALLOCATIONS; i++) {
+    if (gc_allocations[i].in_use) {
+      if (!gc_allocations[i].marked) {
+        // Free unmarked allocation
+        gc_hash_remove(gc_allocations[i].ptr); // Remove from hash table
+        free(gc_allocations[i].ptr);
+        gc_allocations[i].ptr = NULL;
+        gc_allocations[i].in_use = 0;
+        gc_allocation_count--;
+      } else {
+        // Clear mark for next cycle
+        gc_allocations[i].marked = 0;
+      }
+    }
+  }
+
+  // 2. Sweep Objects
+  for (int i = 1; i < MAX_OBJECTS; i++) {
+    if (objects[i].in_use) {
+      if (!objects[i].marked) {
+        objects[i].in_use = 0; // Reclaim slot
+        // Keys are GC_TYPE_STRING and will be collected by sweep above
+      } else {
+        objects[i].marked = 0;
+      }
+    }
+  }
+
+  // 3. Sweep Lists
+  for (int i = 1; i < MAX_LISTS; i++) {
+    if (lists[i].in_use) {
+      if (!lists[i].marked) {
+        lists[i].in_use = 0; // Reclaim slot
+        // items array is GC_TYPE_LIST_ITEMS and will be collected by sweep
+        // above
+      } else {
+        lists[i].marked = 0;
+      }
+    }
+  }
 }
 
 // ============================================================================
@@ -1125,4 +1581,9 @@ void on_key_up(Value key) {
     keys[k] = 0;
 }
 
-void on_frame_start(void) { memcpy(keys_prev, keys, sizeof(keys)); }
+void on_frame_start(void) {
+  memcpy(keys_prev, keys, sizeof(keys));
+  // GC collection is now safe because __gc_register_roots() registers
+  // all global arrays and string variables as roots at game_init
+  gc_maybe_collect();
+}

@@ -57,6 +57,10 @@ typedef long Value;
 #define IS_INT(x) (((x) & 1))
 #define IS_OBJ(x) (!((x) & 1))
 
+// GC stubs (no-op for test environment)
+static inline void gc_register_root_array(Value *array, int size) { (void)array; (void)size; }
+static inline void gc_register_root_value(Value *value_ptr) { (void)value_ptr; }
+
 static inline void console_log(Value msg) { printf("%s\n", (const char *)AS_OBJ(msg)); }
 static inline void console_log_int(Value value) { printf("%ld\n", AS_INT(value)); }
 static inline void console_log_float(float value) { printf("%f\n", value); }

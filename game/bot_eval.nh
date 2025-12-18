@@ -107,34 +107,16 @@
     // In step mode, set up loop state and execute first statement only
     << /bot_enter_inf_loop_stepping/node/env when bot_is_stepping == 1.
     
-    // In run mode, run the loop normally (yields on moves)
-    res := 0.
-    loop >
-        >> when /bot_check_ops/ == 1.
-        
-        // Update line number for loop body
-        bot_current_line = node->body->line when node->body->line gt 0.
-        
-        res = /bot_eval/node->body/env.
-        flow := /bot_env_get_flow/env.
-        >> when flow == 1. // break
-        >> when flow == 2. // return
-        // continue (flow == 3): reset flow and continue loop
-        /bot_env_set_flow/env/0 when flow == 3.
-        
-        // Check if we should yield (from move)
-        // Save loop state for resumption
-        bot_in_loop = 1 when bot_yield == 1.
-        bot_loop_node = node when bot_yield == 1.
-        bot_loop_iter = 0 when bot_yield == 1.
-        bot_loop_env = env when bot_yield == 1.
-        >> when bot_yield == 1.
-    <
-    flow := /bot_env_get_flow/env.
-    /bot_env_set_flow/env/0 when flow == 1.
-    // Clear loop state if we finished normally
-    bot_in_loop = 0 when bot_yield == 0.
-    << res.
+    // In run mode, use flattened logic too (so we can resume from correct index)
+    // Setup and execute first step
+    /bot_enter_inf_loop_stepping/node/env.
+    
+    // If first step yielded, return 0 (state is already saved)
+    << 0 when bot_yield == 1.
+    
+    // Otherwise continue execution until yield/break
+    /bot_exec_loop_body_run_mode/env.
+    << 0.
 <
 
 #bot_enter_inf_loop_stepping(node, env) >
@@ -185,42 +167,15 @@
     // In step mode, set up loop state and execute first statement only
     << /bot_enter_for_loop_stepping/node/env/start/end/var when bot_is_stepping == 1.
     
-    // In run mode, run the loop normally (yields on moves)
-    i := start.
-    loop >
-        >> when /bot_check_ops/ == 1.
-        >> when i gt end.
-        
-        /bot_env_set/env/var/i.
-        
-        // Update line number for loop body
-        bot_current_line = node->body->line when node->body->line gt 0.
-        
-        /bot_eval/node->body/env.
-        
-        flow := /bot_env_get_flow/env.
-        >> when flow == 1. // break
-        >> when flow == 2. // return
-        // continue (flow == 3): reset flow, increment i, continue loop
-        /bot_env_set_flow/env/0 when flow == 3.
-        
-        i = i + 1.
-        
-        // Check if we should yield (from move)
-        // Save for-loop state for resumption
-        bot_in_loop = 2 when bot_yield == 1.
-        bot_loop_node = node when bot_yield == 1.
-        bot_loop_iter = i when bot_yield == 1.
-        bot_loop_var = var when bot_yield == 1.
-        bot_loop_end = end when bot_yield == 1.
-        bot_loop_env = env when bot_yield == 1.
-        >> when bot_yield == 1.
-    <
+    // In run mode, use flattened logic too (so we can resume from correct index)
+    // Setup and execute first step
+    /bot_enter_for_loop_stepping/node/env/start/end/var.
     
-    flow := /bot_env_get_flow/env.
-    /bot_env_set_flow/env/0 when flow == 1.
-    // Clear loop state if we finished normally
-    bot_in_loop = 0 when bot_yield == 0.
+    // If first step yielded, return 0 (state is already saved)
+    << 0 when bot_yield == 1.
+    
+    // Otherwise continue execution until yield/break
+    /bot_exec_loop_body_run_mode/env.
     << 0.
 <
 
@@ -284,6 +239,9 @@
     
     call_env := /bot_env_new_child/closure_env.
     
+    // Protect call_env from GC during recursive evaluation
+    /gc_push_env/call_env.
+    
     num_args := /ds_list_len/args.
     i := 0.
     loop >
@@ -299,6 +257,9 @@
     
     ret := /bot_env_get_return/call_env.
     flow := /bot_env_get_flow/call_env.
+    
+    // Pop env from GC protection stack before returning
+    /gc_pop_env/.
     
     << (flow == 2) | >
         1 => ret
@@ -497,6 +458,7 @@
     dx := /bot_eval/(/ds_list_get/args/0)/env.
     dy := /bot_eval/(/ds_list_get/args/1)/env.
     
+    // Check for tile type
     tile := /get_tile/(player_x + dx)/(player_y + dy).
     << /can_walk/tile.
 <

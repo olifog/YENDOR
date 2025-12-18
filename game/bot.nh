@@ -220,6 +220,12 @@ bot_message := "".
     bot_loop_body_idx = 0.
     // last_message = "Bot stopped.". // Removed to prevent duplicate
     bot_message = "Bot stopped.".
+    // Clear arrays so GC can collect old objects
+    /gc_clear_array/bot_statements/16384.
+    /gc_clear_array/bot_loop_body_stmts/16384.
+    // Clear execution stack and force garbage collection
+    /gc_clear_exec_stack/.
+    /gc_force_collect/.
 <
 
 #bot_pause() >
@@ -315,6 +321,21 @@ bot_message := "".
     << 0.
 <
 
+
+
+// Helper for Run Mode: execute flattened body until yield
+#bot_exec_loop_body_run_mode(env) >
+    loop >
+        // Execute one flattened step
+        /bot_step_loop_body/env.
+        
+        // Stop if we yielded, ran out of ops, or broke out of loop
+        >> when bot_yield == 1.
+        >> when /bot_check_ops/ == 1.
+        >> when bot_in_loop == 0.
+    <
+<
+
 #bot_resume_inf_loop() >
     node := bot_loop_node.
     env := bot_loop_env.
@@ -322,19 +343,8 @@ bot_message := "".
     // In step mode, execute one statement from flattened body
     << /bot_step_loop_body/env when bot_is_stepping == 1.
     
-    // In run mode, execute entire body (will yield on moves)
-    bot_current_line = node->body->line when node->body->line gt 0.
-    /bot_eval/node->body/env.
-    
-    flow := /bot_env_get_flow/env.
-    // Handle break
-    bot_in_loop = 0 when flow == 1.
-    /bot_env_set_flow/env/0 when flow == 1.
-    // Handle return
-    bot_in_loop = 0 when flow == 2.
-    
-    // If we didn't yield, loop continues next tick automatically
-    // If we did yield, state is already saved
+    // In run mode, execute using flattened body mechanism too (to track index)
+    /bot_exec_loop_body_run_mode/env.
 <
 
 #bot_resume_for_loop() >
@@ -354,22 +364,8 @@ bot_message := "".
     // In step mode, execute one statement from flattened body
     << /bot_step_loop_body/env when bot_is_stepping == 1.
     
-    // In run mode, execute entire body (will yield on moves)
-    bot_current_line = node->body->line when node->body->line gt 0.
-    /bot_eval/node->body/env.
-    
-    flow := /bot_env_get_flow/env.
-    // Handle break
-    bot_in_loop = 0 when flow == 1.
-    /bot_env_set_flow/env/0 when flow == 1.
-    // Handle return
-    bot_in_loop = 0 when flow == 2.
-    
-    // Increment for next iteration
-    bot_loop_iter = i + 1.
-    
-    // Check if loop is done
-    bot_in_loop = 0 when bot_loop_iter gt end and bot_yield == 0.
+    // In run mode, execute using flattened body mechanism too
+    /bot_exec_loop_body_run_mode/env.
 <
 
 // Execute one statement from loop body (for step mode)
@@ -395,9 +391,14 @@ bot_message := "".
     
     // Check for flow control
     flow := /bot_env_get_flow/env.
+    // break (flow == 1): exit loop
     bot_in_loop = 0 when flow == 1.
     /bot_env_set_flow/env/0 when flow == 1.
+    // return (flow == 2): exit loop
     bot_in_loop = 0 when flow == 2.
+    // continue (flow == 3): skip to next iteration
+    /bot_env_set_flow/env/0 when flow == 3.
+    << /bot_next_loop_iteration/ when flow == 3.
     
     // Check if we finished the body
     << /bot_next_loop_iteration/ when bot_loop_body_idx ge bot_loop_body_count.
