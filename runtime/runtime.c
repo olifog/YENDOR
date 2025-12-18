@@ -1074,13 +1074,15 @@ void game_render(void) {}
 #endif
 
 void on_key_down(Value key) {
-  if (key >= 0 && key < 512)
-    keys[key] = 1;
+  long k = AS_INT(key);
+  if (k >= 0 && k < 512)
+    keys[k] = 1;
 }
 
 void on_key_up(Value key) {
-  if (key >= 0 && key < 512)
-    keys[key] = 0;
+  long k = AS_INT(key);
+  if (k >= 0 && k < 512)
+    keys[k] = 0;
 }
 
 void on_frame_start(void) { memcpy(keys_prev, keys, sizeof(keys)); }
