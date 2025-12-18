@@ -37,7 +37,8 @@ typedef struct {
 static GcAllocation gc_allocations[GC_MAX_ALLOCATIONS];
 static int gc_initialized = 0;
 static int gc_allocation_count = 0;
-static int gc_threshold = 1000; // Trigger GC after this many allocations
+static int gc_threshold = 1000;    // Trigger GC after this many allocations
+static int gc_next_alloc_slot = 0; // Cursor for next-fit allocation
 
 // IMPORTANT: GC requires roots to be registered. Compiled nh code stores
 // strings in C global variables and arrays. These MUST be registered via
@@ -55,7 +56,7 @@ typedef struct {
 static GcRootArray gc_root_arrays[GC_MAX_ROOT_ARRAYS];
 
 // Root value registry - for single globals like vim_yank_buffer
-#define GC_MAX_ROOT_VALUES 256
+#define GC_MAX_ROOT_VALUES 1024
 
 static Value *gc_root_values[GC_MAX_ROOT_VALUES];
 static int gc_root_value_count = 0;
@@ -75,7 +76,38 @@ void gc_register_root_array(Value *array, int size) {
 // Register a single value as a GC root (called from generated code)
 void gc_register_root_value(Value *value_ptr) {
   if (gc_root_value_count < GC_MAX_ROOT_VALUES) {
+    // Debug: trace registrations around the old limit
+    if (gc_root_value_count >= 250 && gc_root_value_count <= 270) {
+      printf("[GC DEBUG] Registering root value #%d\n", gc_root_value_count);
+    }
     gc_root_values[gc_root_value_count++] = value_ptr;
+  } else {
+    printf("[GC ERROR] gc_register_root_value: capacity exceeded! Max=%d\n",
+           GC_MAX_ROOT_VALUES);
+  }
+}
+
+// ============================================================================
+// Execution Stack Protection
+// Protects temporary environments (e.g., function call envs) during execution
+// ============================================================================
+
+#define GC_MAX_EXEC_STACK 64
+
+static Value gc_exec_stack[GC_MAX_EXEC_STACK];
+static int gc_exec_stack_depth = 0;
+
+// Push an environment onto the execution stack to protect it from GC
+void gc_push_env(Value env) {
+  if (gc_exec_stack_depth < GC_MAX_EXEC_STACK) {
+    gc_exec_stack[gc_exec_stack_depth++] = env;
+  }
+}
+
+// Pop an environment from the execution stack
+void gc_pop_env(void) {
+  if (gc_exec_stack_depth > 0) {
+    gc_exec_stack_depth--;
   }
 }
 
@@ -98,8 +130,11 @@ static void *gc_alloc(size_t size, GcAllocType type) {
   if (!ptr)
     return NULL;
 
-  // Find a free slot
-  for (int i = 0; i < GC_MAX_ALLOCATIONS; i++) {
+  // Find a free slot (Next Fit strategy for O(1) amortized)
+  int start_slot = gc_next_alloc_slot;
+  int i = start_slot;
+
+  do {
     if (!gc_allocations[i].in_use) {
       gc_allocations[i].ptr = ptr;
       gc_allocations[i].type = type;
@@ -107,9 +142,13 @@ static void *gc_alloc(size_t size, GcAllocType type) {
       gc_allocations[i].in_use = 1;
       gc_allocation_count++;
       gc_hash_insert(ptr, i); // Add to hash table
+
+      // Update cursor for next time
+      gc_next_alloc_slot = (i + 1) % GC_MAX_ALLOCATIONS;
       return ptr;
     }
-  }
+    i = (i + 1) % GC_MAX_ALLOCATIONS;
+  } while (i != start_slot);
 
   // No slots available, just leak (safety over efficiency)
   return ptr;
@@ -119,7 +158,7 @@ static void *gc_alloc(size_t size, GcAllocType type) {
 // Hash table for fast pointer -> slot lookup
 // ============================================================================
 
-#define GC_HASH_SIZE 16384 // Must be power of 2
+#define GC_HASH_SIZE 262144 // Must be power of 2, and > GC_MAX_ALLOCATIONS
 
 typedef struct {
   void *ptr;
@@ -264,6 +303,7 @@ typedef struct {
   Property props[MAX_PROPS];
   int prop_count;
   int in_use;
+  int marked; // For GC
 } Object;
 
 static Object objects[MAX_OBJECTS];
@@ -281,7 +321,12 @@ static Value alloc_object(void) {
   for (int i = 1; i < MAX_OBJECTS; i++) {
     if (!objects[i].in_use) {
       objects[i].in_use = 1;
+      objects[i].marked = 0;
       objects[i].prop_count = 0;
+      // Debug: trace object allocation
+      if (i < 50) { // First 50 objects are likely important
+        printf("[GC DEBUG] alloc_object: created object %d\n", i);
+      }
       return VAL_INT(i);
     }
   }
@@ -334,8 +379,11 @@ void ds_object_set(Value *obj, Value key_val, Value value) {
     *obj = handle_val;
   }
 
-  if (!objects[handle].in_use)
+  if (!objects[handle].in_use) {
+    printf("[GC DEBUG] ds_object_set FAILED: handle=%ld in_use=%d key=%s\n",
+           handle, objects[handle].in_use, key ? key : "(null)");
     return;
+  }
 
   // Update existing
   for (int i = 0; i < objects[handle].prop_count; i++) {
@@ -536,6 +584,7 @@ typedef struct {
   int count;
   int capacity;
   int in_use;
+  int marked; // For GC
 } List;
 
 static List lists[MAX_LISTS];
@@ -553,6 +602,7 @@ Value ds_list_create(void) {
   for (int i = 1; i < MAX_LISTS; i++) {
     if (!lists[i].in_use) {
       lists[i].in_use = 1;
+      lists[i].marked = 0;
       lists[i].count = 0;
       lists[i].capacity = 16;
       lists[i].items = (Value *)gc_alloc(lists[i].capacity * sizeof(Value),
@@ -965,70 +1015,98 @@ void buf_free(Value buffer_handle) {
 // (Defined here after all data structures are declared)
 // ============================================================================
 
+// Recursive marker: handles both pointers (strings) and integer handles
+// (Objects/Lists) This is "Conservative GC" effectively, as we treat any
+// integer that *looks* like a handle as one.
+static void gc_mark_value(Value val) {
+  if (IS_OBJ(val)) {
+    // Pointer type (String)
+    gc_mark_ptr((void *)AS_OBJ(val));
+  } else {
+    // Integer type - could be an Object handle or List handle
+    long id = AS_INT(val);
+
+    // Check if it's a valid object handle
+    if (id > 0 && id < MAX_OBJECTS && objects[id].in_use &&
+        !objects[id].marked) {
+      objects[id].marked = 1;
+      // Recurse into properties
+      for (int i = 0; i < objects[id].prop_count; i++) {
+        gc_mark_value(objects[id].props[i].value); // Value (recursive)
+        // Keys are always strings (pointers)
+        if (objects[id].props[i].key) {
+          gc_mark_ptr(objects[id].props[i].key);
+        }
+      }
+    }
+
+    // Check if it's a valid list handle
+    // Note: An integer X could theoretically be both Object X and List X.
+    // In a dynamic untyped system with overlapping ID spaces, we must
+    // conservatively mark *both*.
+    if (id > 0 && id < MAX_LISTS && lists[id].in_use && !lists[id].marked) {
+      lists[id].marked = 1;
+      // Mark the backing array itself
+      if (lists[id].items) {
+        gc_mark_ptr(lists[id].items);
+      }
+      // Recurse into items
+      for (int i = 0; i < lists[id].count; i++) {
+        gc_mark_value(lists[id].items[i]);
+      }
+    }
+  }
+}
+
 static void gc_mark(void) {
-  // Mark all strings referenced by objects
-  for (int i = 0; i < MAX_OBJECTS; i++) {
-    if (objects[i].in_use) {
-      for (int j = 0; j < objects[i].prop_count; j++) {
-        // Mark property keys
-        gc_mark_ptr(objects[i].props[j].key);
+  // Mark collected roots
 
-        // Mark string values (non-integers)
-        Value val = objects[i].props[j].value;
-        if (IS_OBJ(val)) {
-          gc_mark_ptr((void *)AS_OBJ(val));
-        }
+  // DEBUG: Show total root counts
+  static int gc_debug_count = 0;
+  if (gc_debug_count < 5) {
+    printf("[GC DEBUG] gc_mark called: gc_root_value_count=%d\n",
+           gc_root_value_count);
+  }
+  gc_debug_count++;
+
+  // 1. Registered root arrays (globals)
+  for (int i = 0; i < GC_MAX_ROOT_ARRAYS; i++) {
+    if (gc_root_arrays[i].in_use) {
+      for (int j = 0; j < gc_root_arrays[i].size; j++) {
+        gc_mark_value(gc_root_arrays[i].array[j]);
       }
     }
   }
 
-  // Mark all values in lists
-  for (int i = 0; i < MAX_LISTS; i++) {
-    if (lists[i].in_use) {
-      // Mark the items array itself
-      gc_mark_ptr(lists[i].items);
-
-      // Mark string values within the list
-      for (int j = 0; j < lists[i].count; j++) {
-        Value val = lists[i].items[j];
-        if (IS_OBJ(val)) {
-          gc_mark_ptr((void *)AS_OBJ(val));
-        }
+  // 2. Registered root values (single globals)
+  for (int i = 0; i < gc_root_value_count; i++) {
+    if (gc_root_values[i]) {
+      Value val = *gc_root_values[i];
+      long id = AS_INT(val);
+      // Debug: trace roots with LOW object IDs (these are real objects)
+      if (id > 0 && id < 50 && objects[id].in_use) {
+        printf("[GC DEBUG] Root[%d] raw=%ld obj_id=%ld in_use=%d marked=%d\n",
+               i, (long)val, id, objects[id].in_use, objects[id].marked);
       }
+      gc_mark_value(val);
     }
   }
 
-  // Mark float buffer data
+  // 3. Mark float buffer data
   for (int i = 0; i < MAX_FLOAT_BUFFERS; i++) {
     if (float_buffers[i].in_use) {
       gc_mark_ptr(float_buffers[i].data);
     }
   }
 
-  // Mark values in registered root arrays (from compiled code)
-  for (int i = 0; i < GC_MAX_ROOT_ARRAYS; i++) {
-    if (gc_root_arrays[i].in_use) {
-      for (int j = 0; j < gc_root_arrays[i].size; j++) {
-        Value val = gc_root_arrays[i].array[j];
-        if (IS_OBJ(val)) {
-          gc_mark_ptr((void *)AS_OBJ(val));
-        }
-      }
-    }
-  }
-
-  // Mark registered single root values (from compiled code)
-  for (int i = 0; i < gc_root_value_count; i++) {
-    if (gc_root_values[i]) {
-      Value val = *gc_root_values[i];
-      if (IS_OBJ(val)) {
-        gc_mark_ptr((void *)AS_OBJ(val));
-      }
-    }
+  // 4. Mark execution stack (temporary environments during function calls)
+  for (int i = 0; i < gc_exec_stack_depth; i++) {
+    gc_mark_value(gc_exec_stack[i]);
   }
 }
 
 static void gc_sweep(void) {
+  // 1. Sweep Allocations (Strings, Backing Arrays)
   for (int i = 0; i < GC_MAX_ALLOCATIONS; i++) {
     if (gc_allocations[i].in_use) {
       if (!gc_allocations[i].marked) {
@@ -1041,6 +1119,35 @@ static void gc_sweep(void) {
       } else {
         // Clear mark for next cycle
         gc_allocations[i].marked = 0;
+      }
+    }
+  }
+
+  // 2. Sweep Objects
+  for (int i = 1; i < MAX_OBJECTS; i++) {
+    if (objects[i].in_use) {
+      if (!objects[i].marked) {
+        // Debug: trace sweeping of objects with high IDs (likely env objects)
+        if (i > 1000) {
+          printf("[GC DEBUG] SWEEPING object %d (not marked)\n", i);
+        }
+        objects[i].in_use = 0; // Reclaim slot
+        // Keys are GC_TYPE_STRING and will be collected by sweep above
+      } else {
+        objects[i].marked = 0;
+      }
+    }
+  }
+
+  // 3. Sweep Lists
+  for (int i = 1; i < MAX_LISTS; i++) {
+    if (lists[i].in_use) {
+      if (!lists[i].marked) {
+        lists[i].in_use = 0; // Reclaim slot
+        // items array is GC_TYPE_LIST_ITEMS and will be collected by sweep
+        // above
+      } else {
+        lists[i].marked = 0;
       }
     }
   }

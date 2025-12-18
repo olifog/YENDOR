@@ -11,8 +11,8 @@ static int lambda_counter = 0;
 static int in_main = 0; // Track if we're generating main() function
 
 // GC root tracking - collect global arrays and string variables
-#define MAX_GC_ROOT_ARRAYS 256
-#define MAX_GC_ROOT_VALUES 256
+#define MAX_GC_ROOT_ARRAYS 1024
+#define MAX_GC_ROOT_VALUES 1024
 
 typedef struct {
   char name[64];
@@ -919,10 +919,12 @@ static void codegen_global_var(ASTNode *node) {
     emit("long %s = ", node->data.var_decl.name);
     codegen_expr(node->data.var_decl.init);
     emit_raw(";\n");
+    collect_gc_root_value(node->data.var_decl.name);
   } else {
     emit("long %s = ", node->data.var_decl.name);
     codegen_expr(node->data.var_decl.init);
     emit_raw(";\n");
+    collect_gc_root_value(node->data.var_decl.name);
   }
 }
 

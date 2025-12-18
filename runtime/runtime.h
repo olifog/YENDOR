@@ -29,6 +29,10 @@ void gc_register_root_array(Value *array, int size);
 // that may hold strings)
 void gc_register_root_value(Value *value_ptr);
 
+// Execution stack protection - protect temporary environments during execution
+void gc_push_env(Value env);
+void gc_pop_env(void);
+
 // Check if value is a string (vs integer)
 Value ds_is_string(Value v);
 
