@@ -49,8 +49,16 @@ cat > "$TMP_DIR/runtime.h" << 'EOF'
 
 typedef long Value;
 
-static inline void console_log(Value msg) { printf("%s\n", (const char *)msg); }
-static inline void console_log_int(Value value) { printf("%ld\n", value); }
+// Tagging macros: Integers are tagged (odd), Pointers pass through unchanged
+#define VAL_INT(x) (((long)(x) << 1) | 1)
+#define VAL_OBJ(x) ((Value)(x))
+#define AS_INT(x) ((long)(x) >> 1)
+#define AS_OBJ(x) ((void *)(x))
+#define IS_INT(x) (((x) & 1))
+#define IS_OBJ(x) (!((x) & 1))
+
+static inline void console_log(Value msg) { printf("%s\n", (const char *)AS_OBJ(msg)); }
+static inline void console_log_int(Value value) { printf("%ld\n", AS_INT(value)); }
 static inline void console_log_float(float value) { printf("%f\n", value); }
 
 // ============================================================================
@@ -112,16 +120,16 @@ static inline Value ds_object_create(int count, ...) {
 }
 
 static inline Value ds_object_get(Value obj, Value key_val) {
-  const char *key = (const char *)key_val;
-  if (obj <= 0 || obj >= MAX_OBJECTS) return 0;
-  if (!objects[obj].in_use) return 0;
+  const char *key = (const char *)AS_OBJ(key_val);
+  if (obj <= 0 || obj >= MAX_OBJECTS) return VAL_INT(0);
+  if (!objects[obj].in_use) return VAL_INT(0);
 
   for (int i = 0; i < objects[obj].prop_count; i++) {
     if (strcmp(objects[obj].props[i].key, key) == 0) {
       return objects[obj].props[i].value;
     }
   }
-  return 0;
+  return VAL_INT(0);
 }
 
 static void ds_object_set_impl(Value *obj, const char *key, Value value) {
@@ -164,14 +172,14 @@ static inline void ds_set_prop(Value obj, Value key_val, Value value) {
 // ============================================================================
 
 static inline Value ds_strlen(Value str_val) {
-   const char* s = (const char*)str_val;
-   return s ? strlen(s) : 0;
+   const char* s = (const char*)AS_OBJ(str_val);
+   return VAL_INT(s ? strlen(s) : 0);
 }
 static inline Value ds_streq(Value s1, Value s2) {
-    const char* a = (const char*)s1;
-    const char* b = (const char*)s2;
-    if(!a || !b) return 0;
-    return strcmp(a, b) == 0;
+    const char* a = (const char*)AS_OBJ(s1);
+    const char* b = (const char*)AS_OBJ(s2);
+    if(!a || !b) return VAL_INT(0);
+    return VAL_INT(strcmp(a, b) == 0);
 }
 
 // ============================================================================
@@ -187,14 +195,14 @@ static inline void gfx_present(void) {}
 
 // Math
 static inline Value math_random(Value min, Value max) { return min; } // Deterministic for tests
-static inline Value math_sin(Value x) { return (Value)(sin(x)*1000); }
-static inline Value math_cos(Value x) { return (Value)(cos(x)*1000); }
+static inline Value math_sin(Value x) { return VAL_INT((long)(sin(AS_INT(x))*1000)); }
+static inline Value math_cos(Value x) { return VAL_INT((long)(cos(AS_INT(x))*1000)); }
 
 // Time
-static inline Value time_ms(void) { return 0; }
+static inline Value time_ms(void) { return VAL_INT(0); }
 
 // Input
-static inline Value input_key_pressed(Value key) { (void)key; return 0; }
+static inline Value input_key_pressed(Value key) { (void)key; return VAL_INT(0); }
 
 #endif
 EOF

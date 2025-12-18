@@ -390,9 +390,9 @@ static void codegen_expr(ASTNode *node) {
     break;
 
   case NODE_TERNARY:
-    emit_raw("(");
+    emit_raw("((");
     codegen_expr(node->data.ternary.condition);
-    emit_raw(" ? ");
+    emit_raw(") != VAL_INT(0) ? ");
     codegen_expr(node->data.ternary.then_expr);
     emit_raw(" : ");
     codegen_expr(node->data.ternary.else_expr);
