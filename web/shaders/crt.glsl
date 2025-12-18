@@ -1,10 +1,10 @@
 vec2 crtCurve(vec2 uv)
 {
-    uv = uv * 2.0 - 1.0;
-    uv *= 1.05;
-    uv.x *= 1.0 + pow(abs(uv.y) / 4.0, 2.0);
-    uv.y *= 1.0 + pow(abs(uv.x) / 3.0, 2.0);
-    uv = uv * 0.5 + 0.5;
+    //uv = uv * 2.0 - 1.0;
+    //uv *= 1.05;
+    //uv.x *= 1.0 + pow(abs(uv.y) / 4.0, 2.0);
+    //uv.y *= 1.0 + pow(abs(uv.x) / 3.0, 2.0);
+    //uv = uv * 0.5 + 0.5;
     return uv;
 }
 
