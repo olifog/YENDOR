@@ -116,6 +116,59 @@ static const char *binop_to_c(BinaryOp op) {
 static void codegen_expr(ASTNode *node);
 static void codegen_stmt(ASTNode *node);
 
+// Registry of variables known to hold float values
+#define MAX_FLOAT_VARS 256
+static char *float_vars[MAX_FLOAT_VARS];
+static int float_var_count = 0;
+
+static void register_float_var(const char *name) {
+  if (float_var_count < MAX_FLOAT_VARS) {
+    float_vars[float_var_count++] = strdup(name);
+  }
+}
+
+static int is_float_var(const char *name) {
+  for (int i = 0; i < float_var_count; i++) {
+    if (strcmp(float_vars[i], name) == 0)
+      return 1;
+  }
+  return 0;
+}
+
+// Helper to check if an expression involves floats (recursively)
+static int is_float_expr(ASTNode *node) {
+  if (!node)
+    return 0;
+  switch (node->type) {
+  case NODE_FLOAT_LITERAL:
+    return 1;
+  case NODE_IDENTIFIER:
+    // Check if this variable was declared with a float expression
+    return is_float_var(node->data.identifier.name);
+  case NODE_BINARY_OP:
+    // If either operand involves floats, the result is float
+    return is_float_expr(node->data.binary.left) ||
+           is_float_expr(node->data.binary.right);
+  case NODE_UNARY_OP:
+    return is_float_expr(node->data.unary.operand);
+  default:
+    return 0;
+  }
+}
+
+// Emit an expression for use in a float context
+// Non-float identifiers (function params, etc.) are tagged integers - unwrap
+// them
+static void codegen_float_operand(ASTNode *node) {
+  if (node && node->type == NODE_IDENTIFIER &&
+      !is_float_var(node->data.identifier.name)) {
+    // This is a non-float identifier (likely a function parameter) - unwrap it
+    emit_raw("AS_INT(%s)", node->data.identifier.name);
+  } else {
+    codegen_expr(node);
+  }
+}
+
 // Structure to collect lambdas for forward declaration
 typedef struct {
   int id;
@@ -145,7 +198,7 @@ static void codegen_expr(ASTNode *node) {
 
   switch (node->type) {
   case NODE_INT_LITERAL:
-    emit_raw("%ld", (long)node->data.int_literal.value);
+    emit_raw("VAL_INT(%ld)", (long)node->data.int_literal.value);
     break;
 
   case NODE_FLOAT_LITERAL:
@@ -154,9 +207,9 @@ static void codegen_expr(ASTNode *node) {
 
   case NODE_STRING_LITERAL: {
     // Escape special characters for C string literal
-    // Cast to Value so it can be passed to runtime functions
+    // Cast to Value (OBJ) so it can be passed to runtime functions
     const char *s = node->data.string_literal.value;
-    emit_raw("(Value)\"");
+    emit_raw("VAL_OBJ(\"");
     for (; *s; s++) {
       switch (*s) {
       case '\n':
@@ -179,12 +232,12 @@ static void codegen_expr(ASTNode *node) {
         break;
       }
     }
-    emit_raw("\"");
+    emit_raw("\")");
     break;
   }
 
   case NODE_BOOL_LITERAL:
-    emit_raw("%ld", (long)node->data.bool_literal.value);
+    emit_raw("VAL_INT(%ld)", (long)node->data.bool_literal.value);
     break;
 
   case NODE_IDENTIFIER:
@@ -197,24 +250,83 @@ static void codegen_expr(ASTNode *node) {
     break;
 
   case NODE_BINARY_OP:
-    emit_raw("(");
-    codegen_expr(node->data.binary.left);
-    emit_raw(" %s ", binop_to_c(node->data.binary.op));
-    codegen_expr(node->data.binary.right);
-    emit_raw(")");
+    // Special handling for comparisons - result is boolean (INT 0 or 1)
+    if (node->data.binary.op >= OP_EQ && node->data.binary.op <= OP_OR) {
+      // Logical/Comparison ops return tagged booleans
+      // Operands for logical ops (AND/OR) are treated as booleans (check != 0)
+      // Operands for comparison ops (EQ/NE/LT...) need AS_INT unless we do
+      // operator overloading For simplicity: Int comparisons
+      if (node->data.binary.op == OP_EQ) {
+        // Equality is special: works for both if types match
+        // But tagged ints != pointers, so just raw equality works!
+        emit_raw("VAL_INT((");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") == (");
+        codegen_expr(node->data.binary.right);
+        emit_raw("))");
+      } else if (node->data.binary.op == OP_NE) {
+        emit_raw("VAL_INT((");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") != (");
+        codegen_expr(node->data.binary.right);
+        emit_raw("))");
+      } else if (node->data.binary.op == OP_AND) {
+        emit_raw("(((");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") != VAL_INT(0)) && ((");
+        codegen_expr(node->data.binary.right);
+        emit_raw(") != VAL_INT(0)) ? VAL_INT(1) : VAL_INT(0))");
+      } else if (node->data.binary.op == OP_OR) {
+        emit_raw("(((");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") != VAL_INT(0)) || ((");
+        codegen_expr(node->data.binary.right);
+        emit_raw(") != VAL_INT(0)) ? VAL_INT(1) : VAL_INT(0))");
+      } else {
+        // Relational ops ( <, >, <=, >= ) assume integers for now
+        emit_raw("VAL_INT(AS_INT(");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") %s AS_INT(", binop_to_c(node->data.binary.op));
+        codegen_expr(node->data.binary.right);
+        emit_raw("))");
+      }
+    } else {
+      // Arithmetic ops ( +, -, *, /, % )
+      // Check if either operand is a float - if so, emit raw operation
+      if (is_float_expr(node->data.binary.left) ||
+          is_float_expr(node->data.binary.right)) {
+        emit_raw("(");
+        codegen_float_operand(node->data.binary.left);
+        emit_raw(" %s ", binop_to_c(node->data.binary.op));
+        codegen_float_operand(node->data.binary.right);
+        emit_raw(")");
+      } else {
+        emit_raw("VAL_INT(AS_INT(");
+        codegen_expr(node->data.binary.left);
+        emit_raw(") %s AS_INT(", binop_to_c(node->data.binary.op));
+        codegen_expr(node->data.binary.right);
+        emit_raw("))");
+      }
+    }
     break;
 
   case NODE_UNARY_OP:
     switch (node->data.unary.op) {
     case OP_NEG:
-      emit_raw("(-");
-      codegen_expr(node->data.unary.operand);
-      emit_raw(")");
+      if (is_float_expr(node->data.unary.operand)) {
+        emit_raw("(-");
+        codegen_expr(node->data.unary.operand);
+        emit_raw(")");
+      } else {
+        emit_raw("VAL_INT(-AS_INT(");
+        codegen_expr(node->data.unary.operand);
+        emit_raw("))");
+      }
       break;
     case OP_NOT:
-      emit_raw("(!");
+      emit_raw("VAL_INT((");
       codegen_expr(node->data.unary.operand);
-      emit_raw(")");
+      emit_raw(") == VAL_INT(0))");
       break;
     }
     break;
@@ -238,7 +350,8 @@ static void codegen_expr(ASTNode *node) {
     if (node->data.assign.target->type == NODE_MEMBER) {
       emit_raw("ds_object_set(&");
       codegen_expr(node->data.assign.target->data.member.object);
-      emit_raw(", (Value)\"%s\", ", node->data.assign.target->data.member.member);
+      emit_raw(", VAL_OBJ(\"%s\"), ",
+               node->data.assign.target->data.member.member);
       codegen_expr(node->data.assign.value);
       emit_raw(")");
     } else {
@@ -250,9 +363,9 @@ static void codegen_expr(ASTNode *node) {
 
   case NODE_INDEX:
     codegen_expr(node->data.index.array);
-    emit_raw("[");
+    emit_raw("[AS_INT(");
     codegen_expr(node->data.index.index);
-    emit_raw("]");
+    emit_raw(")]");
     break;
 
   case NODE_ARRAY:
@@ -444,7 +557,7 @@ static void codegen_expr(ASTNode *node) {
     // Member access: obj.field becomes ds_object_get(obj, (Value)"field")
     emit_raw("ds_object_get(");
     codegen_expr(node->data.member.object);
-    emit_raw(", (Value)\"%s\")", node->data.member.member);
+    emit_raw(", VAL_OBJ(\"%s\"))", node->data.member.member);
     break;
 
   default:
@@ -478,7 +591,9 @@ static void codegen_stmt(ASTNode *node) {
       codegen_expr(node->data.var_decl.init);
       emit_raw(";\n");
     } else if (node->data.var_decl.init &&
-               node->data.var_decl.init->type == NODE_FLOAT_LITERAL) {
+               is_float_expr(node->data.var_decl.init)) {
+      // Variable holds a float value - emit double and register
+      register_float_var(node->data.var_decl.name);
       emit("double %s = ", node->data.var_decl.name);
       codegen_expr(node->data.var_decl.init);
       emit_raw(";\n");
@@ -486,7 +601,8 @@ static void codegen_stmt(ASTNode *node) {
                node->data.var_decl.init->type == NODE_STRING_LITERAL) {
       // Strings are stored as Value (pointer cast to long) for consistency
       emit("Value %s = ", node->data.var_decl.name);
-      codegen_expr(node->data.var_decl.init);
+      codegen_expr(
+          node->data.var_decl.init); // codegen_expr now emits VAL_OBJ("...")
       emit_raw(";\n");
     } else if (node->data.var_decl.init &&
                node->data.var_decl.init->type == NODE_OBJECT) {
@@ -506,7 +622,8 @@ static void codegen_stmt(ASTNode *node) {
     if (node->data.assign.target->type == NODE_MEMBER) {
       emit_raw("ds_object_set(&");
       codegen_expr(node->data.assign.target->data.member.object);
-      emit_raw(", (Value)\"%s\", ", node->data.assign.target->data.member.member);
+      emit_raw(", VAL_OBJ(\"%s\"), ",
+               node->data.assign.target->data.member.member);
       codegen_expr(node->data.assign.value);
       emit_raw(");\n");
     } else {
@@ -519,9 +636,9 @@ static void codegen_stmt(ASTNode *node) {
 
   case NODE_LOOP:
     if (node->data.loop.condition) {
-      emit("while (");
+      emit("while ((");
       codegen_expr(node->data.loop.condition);
-      emit_raw(") ");
+      emit_raw(") != VAL_INT(0)) ");
     } else {
       emit("while (1) ");
     }
@@ -535,8 +652,27 @@ static void codegen_stmt(ASTNode *node) {
       emit("for (long %s = ", node->data.for_loop.var_name);
       codegen_expr(range->data.range.start);
       emit_raw("; %s < ", node->data.for_loop.var_name);
-      codegen_expr(range->data.range.end);
-      emit_raw("; %s++) ", node->data.for_loop.var_name);
+      codegen_expr(
+          range->data.range.end); // Range end is already tagged int? No, range
+                                  // loop var usually raw int in C for loop??
+      // Wait, if we use tagged ints for loop variable, ++ works differently
+      // (+2). If we use raw C long for loop var, we must tag it when using it
+      // in body? Currently codegen emits `long %s`. If `%s` is used in body, it
+      // is an IDENTIFIER. codegen_expr emits name. If name is raw long, using
+      // it in expression expects tagged. FIX: Range loop variable should be raw
+      // long for loop mechanics, but wrapped when accessed? Or we make the loop
+      // variable a tagged int and increment by 2? "long x = VAL_INT(0); x <
+      // VAL_INT(10); x += 2" AST_NEW_RANGE takes start/end nodes. Let's assume
+      // loop var is TAGGED. Start/End are likely integer literals ->
+      // VAL_INT(...). So `for (long i = start; i < end; i += 2)` (if < compares
+      // tagged correctly?) VAL_INT(a) < VAL_INT(b) is same as a < b iff
+      // ((a<<1)|1) < ((b<<1)|1). Yes. So we can loop on tagged values!
+      // Increment must be specialized? Generic `i++` adds 1. Tagged logic: `i =
+      // VAL_INT(AS_INT(i) + 1)` -> `i += 2`. But `i++` in C adds 1. For now,
+      // let's keep it simple: Use tagged values in loop. Change `i++` to `i = i
+      // + 2` ?? No `++` is concise. Actually `+= 2` is fine. `start` and `end`
+      // are expressions.
+      emit_raw("; %s += 2) ", node->data.for_loop.var_name);
       codegen_stmt(node->data.for_loop.body);
     } else {
       // Generic iteration - need runtime support
@@ -556,9 +692,9 @@ static void codegen_stmt(ASTNode *node) {
 
   case NODE_BREAK:
     if (node->data.break_stmt.condition) {
-      emit("if (");
+      emit("if ((");
       codegen_expr(node->data.break_stmt.condition);
-      emit_raw(") break;\n");
+      emit_raw(") != VAL_INT(0)) break;\n");
     } else {
       emit("break;\n");
     }
@@ -566,13 +702,13 @@ static void codegen_stmt(ASTNode *node) {
 
   case NODE_WHEN_STMT:
     if (node->data.when_stmt.is_unless) {
-      emit("if (!(");
+      emit("if ((");
       codegen_expr(node->data.when_stmt.condition);
-      emit_raw(")) { ");
+      emit_raw(") == VAL_INT(0)) { ");
     } else {
-      emit("if (");
+      emit("if ((");
       codegen_expr(node->data.when_stmt.condition);
-      emit_raw(") { ");
+      emit_raw(") != VAL_INT(0)) { ");
     }
     // Inline the action
     if (node->data.when_stmt.action->type == NODE_WAND_CALL) {

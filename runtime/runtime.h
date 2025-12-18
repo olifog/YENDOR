@@ -4,7 +4,21 @@
 #include <stdint.h>
 
 // Basic types
+// Basic types
 typedef long Value;
+
+// Tagging: Integers are odd (bit 0 = 1), Pointers are passed through unchanged
+// 0 is represented as 1 (VAL_INT(0))
+#define VAL_INT(x) (((long)(x) << 1) | 1)
+#define VAL_OBJ(x) ((Value)(x))
+#define AS_INT(x) ((long)(x) >> 1)
+#define AS_OBJ(x)                                                              \
+  ((void *)(x)) // Don't modify pointer - WASM strings may be at odd addresses
+#define IS_INT(x) (((x) & 1))
+#define IS_OBJ(x) (!((x) & 1))
+
+// Check if value is a string (vs integer)
+Value ds_is_string(Value v);
 
 // ============================================================================
 // Platform Detection
@@ -307,7 +321,8 @@ void text_draw(Value x, Value y, Value size, Value r, Value g, Value b,
                Value text);
 
 // Draw a single character (for dungeon rendering)
-void text_char(Value x, Value y, Value size, Value r, Value g, Value b, char c);
+void text_char(Value x, Value y, Value size, Value r, Value g, Value b,
+               Value c);
 
 // Draw an integer at position
 void text_draw_int(Value x, Value y, Value size, Value r, Value g, Value b,
