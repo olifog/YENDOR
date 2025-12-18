@@ -9,7 +9,7 @@ typedef long Value;
 
 // Tagging: Integers are odd (bit 0 = 1), Pointers are passed through unchanged
 // 0 is represented as 1 (VAL_INT(0))
-#define VAL_INT(x) (((long)(x) << 1) | 1)
+#define VAL_INT(x) ((long)(((unsigned long)(x) << 1) | 1))
 #define VAL_OBJ(x) ((Value)(x))
 #define AS_INT(x) ((long)(x) >> 1)
 #define AS_OBJ(x)                                                              \

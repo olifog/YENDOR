@@ -117,6 +117,23 @@ static const char *binop_to_c(BinaryOp op) {
 static void codegen_expr(ASTNode *node);
 static void codegen_stmt(ASTNode *node);
 
+// Identify which function arguments should be treated as floats
+static int is_float_func_arg(const char *name, int arg_idx) {
+  if (strcmp(name, "gl_clear_color") == 0)
+    return 1; // All 4 args
+  if (strcmp(name, "gl_uniform1f") == 0 && arg_idx >= 1)
+    return 1;
+  if (strcmp(name, "gl_uniform2f") == 0 && arg_idx >= 1)
+    return 1;
+  if (strcmp(name, "gl_uniform3f") == 0 && arg_idx >= 1)
+    return 1;
+  if (strcmp(name, "gl_uniform4f") == 0 && arg_idx >= 1)
+    return 1;
+  if (strcmp(name, "buf_set_float") == 0 && arg_idx == 2)
+    return 1;
+  return 0;
+}
+
 // Registry of variables known to hold float values
 #define MAX_FLOAT_VARS 256
 static char *float_vars[MAX_FLOAT_VARS];
@@ -337,7 +354,19 @@ static void codegen_expr(ASTNode *node) {
       for (size_t i = 0; i < node->data.wand_call.args->count; i++) {
         if (i > 0)
           emit_raw(", ");
-        codegen_expr(node->data.wand_call.args->items[i]);
+        ASTNode *arg = node->data.wand_call.args->items[i];
+        if (is_float_func_arg(node->data.wand_call.name, (int)i)) {
+          // Arg expects float: if expr is float, emit raw, else untag int
+          if (is_float_expr(arg)) {
+            codegen_expr(arg);
+          } else {
+            emit_raw("AS_INT(");
+            codegen_expr(arg);
+            emit_raw(")");
+          }
+        } else {
+          codegen_expr(arg);
+        }
       }
     }
     emit_raw(")");
