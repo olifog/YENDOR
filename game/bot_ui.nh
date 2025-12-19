@@ -269,3 +269,69 @@ speed_multiplier := 1.  // Computed from slider_pos
     /text_draw/(sx + sw / 2 + 15)/(sy - 15)/12/255/220/80/"x".
 <
 
+// ============================================================================
+// Settings Button (opens pause popup)
+// ============================================================================
+
+settings_btn_x := 0.
+settings_btn_y := 0.
+settings_btn_size := 28.
+settings_btn_hovered := 0.
+
+#set_settings_button_position(x, y) >
+    settings_btn_x = x.
+    settings_btn_y = y.
+<
+
+#update_settings_button() >
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    
+    bx := settings_btn_x.
+    by := settings_btn_y.
+    bs := settings_btn_size.
+    
+    in_btn := mx ge bx and mx lt bx + bs and my ge by and my lt by + bs.
+    settings_btn_hovered = in_btn.
+    
+    // Handle click
+    just_pressed := /input_mouse_just_pressed/.
+    /toggle_pause_popup/ when just_pressed == 1 and in_btn == 1.
+<
+
+#draw_settings_button() >
+    bx := settings_btn_x.
+    by := settings_btn_y.
+    bs := settings_btn_size.
+    
+    // Calculate position: top right of screen, after slider area
+    // Position near the right side of the screen
+    bx = SCREEN_W - 50.
+    by = btn_play_y.
+    settings_btn_x = bx.
+    settings_btn_y = by.
+    
+    // Background
+    r := 40. g := 45. b := 55.
+    r = 60 when settings_btn_hovered == 1. g = 70 when settings_btn_hovered == 1. b = 85 when settings_btn_hovered == 1.
+    /draw_rect/bx/by/bs/bs/r/g/b/255.
+    
+    // Draw gear icon (simplified as circles/squares)
+    cx := bx + bs / 2.
+    cy := by + bs / 2.
+    
+    // Gear teeth (simplified)
+    gr := 150. gg := 150. gb := 160.
+    gr = 200 when settings_btn_hovered == 1. gg = 200 when settings_btn_hovered == 1. gb = 210 when settings_btn_hovered == 1.
+    
+    // Draw gear as a cogwheel pattern
+    /draw_rect/(cx - 3)/(cy - 8)/6/16/gr/gg/gb/255.
+    /draw_rect/(cx - 8)/(cy - 3)/16/6/gr/gg/gb/255.
+    // Diagonal elements
+    /draw_rect/(cx - 6)/(cy - 6)/4/4/gr/gg/gb/255.
+    /draw_rect/(cx + 2)/(cy - 6)/4/4/gr/gg/gb/255.
+    /draw_rect/(cx - 6)/(cy + 2)/4/4/gr/gg/gb/255.
+    /draw_rect/(cx + 2)/(cy + 2)/4/4/gr/gg/gb/255.
+    // Center hole
+    /draw_rect/(cx - 2)/(cy - 2)/4/4/r/g/b/255.
+<

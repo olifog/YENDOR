@@ -598,6 +598,14 @@ Value ds_string_delete_char(Value str_val, Value pos_val) {
   return VAL_OBJ(result);
 }
 
+// Get string length
+Value ds_string_length(Value str_val) {
+  const char *str = (const char *)AS_OBJ(str_val);
+  if (!str)
+    return VAL_INT(0);
+  return VAL_INT(strlen(str));
+}
+
 // Convert integer to string
 Value ds_int_to_string(Value int_val) {
   char buf[32];
@@ -1211,12 +1219,11 @@ void set_clip_rect(Value x, Value y, Value w, Value h) {
 // Canvas 2D clipping - restore context
 void clear_clip_rect(void) {
 #ifdef __EMSCRIPTEN__
-  EM_ASM(
-      {
-        if (window.textCtx) {
-          window.textCtx.restore();
-        }
-      });
+  EM_ASM({
+    if (window.textCtx) {
+      window.textCtx.restore();
+    }
+  });
 #endif
 }
 
@@ -1456,9 +1463,10 @@ void gl_tex_parameteri(Value target, Value pname, Value param) {
 
 static int keys[512];
 static int keys_prev[512];
-// Accumulates keydown events between frames, then moves to _active at frame start
+// Accumulates keydown events between frames, then moves to _active at frame
+// start
 static int keys_just_pressed_pending[512];
-static int keys_just_pressed_active[512];  // Read during the frame
+static int keys_just_pressed_active[512]; // Read during the frame
 static int shift_held = 0;
 
 Value input_key_pressed(Value key) {
@@ -1472,8 +1480,8 @@ Value input_key_just_pressed(Value key) {
   long k = AS_INT(key);
   if (k < 0 || k >= 512)
     return VAL_INT(0);
-  // Read from active buffer - this contains events from BEFORE this frame started
-  // Multiple reads per frame all return the same value
+  // Read from active buffer - this contains events from BEFORE this frame
+  // started Multiple reads per frame all return the same value
   return VAL_INT(keys_just_pressed_active[k]);
 }
 
@@ -1973,7 +1981,7 @@ void on_key_down(Value key) {
   long k = AS_INT(key);
   if (k >= 0 && k < 512) {
     keys[k] = 1;
-    keys_just_pressed_pending[k] = 1;  // Accumulate for next frame
+    keys_just_pressed_pending[k] = 1; // Accumulate for next frame
   }
 }
 
@@ -1987,7 +1995,8 @@ void on_frame_start(void) {
   memcpy(keys_prev, keys, sizeof(keys));
   // Transfer pending just_pressed events to active buffer for this frame
   // This ensures keys pressed BETWEEN frames are detected this frame
-  memcpy(keys_just_pressed_active, keys_just_pressed_pending, sizeof(keys_just_pressed_active));
+  memcpy(keys_just_pressed_active, keys_just_pressed_pending,
+         sizeof(keys_just_pressed_active));
   memset(keys_just_pressed_pending, 0, sizeof(keys_just_pressed_pending));
   // GC collection is now safe because __gc_register_roots() registers
   // all global arrays and string variables as roots at game_init
@@ -2009,5 +2018,214 @@ void play_sound(Value id_val) {
       id);
 #else
   (void)id;
+#endif
+}
+
+// ============================================================================
+// Volume Control
+// ============================================================================
+
+void js_call_set_volume(Value level_val) {
+  int level = (int)AS_INT(level_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.setGameVolume)
+          window.setGameVolume($0);
+      },
+      level);
+#else
+  (void)level;
+#endif
+}
+
+// ============================================================================
+// Save/Load System
+// ============================================================================
+
+void js_call_save_game(Value slot_val, Value code_val, Value upgrades_val) {
+  int slot = (int)AS_INT(slot_val);
+  const char *code = (const char *)AS_OBJ(code_val);
+  const char *upgrades = (const char *)AS_OBJ(upgrades_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.saveGameData) {
+          var code = UTF8ToString($1);
+          var upgrades = UTF8ToString($2);
+          window.saveGameData($0, code, upgrades);
+        }
+      },
+      slot, code, upgrades);
+#else
+  (void)slot;
+  (void)code;
+  (void)upgrades;
+#endif
+}
+
+static char load_buffer[65536];
+
+Value js_call_load_game(Value slot_val) {
+  int slot = (int)AS_INT(slot_val);
+#ifdef __EMSCRIPTEN__
+  int result = EM_ASM_INT(
+      {
+        var data = window.loadGameData ? window.loadGameData($0) : null;
+        if (!data)
+          return 0;
+        var ptr = $1;
+        for (var i = 0; i < data.length && i < 65535; i++) {
+          HEAP8[ptr + i] = data.charCodeAt(i);
+        }
+        HEAP8[ptr + Math.min(data.length, 65535)] = 0;
+        return 1;
+      },
+      slot, load_buffer);
+
+  if (result == 0)
+    return VAL_INT(0);
+  return VAL_OBJ(load_buffer);
+#else
+  (void)slot;
+  return VAL_INT(0);
+#endif
+}
+
+Value js_call_save_exists(Value slot_val) {
+  int slot = (int)AS_INT(slot_val);
+#ifdef __EMSCRIPTEN__
+  int exists = EM_ASM_INT(
+      { return window.saveSlotExists ? window.saveSlotExists($0) : 0; }, slot);
+  return VAL_INT(exists);
+#else
+  (void)slot;
+  return VAL_INT(0);
+#endif
+}
+
+// ============================================================================
+// Settings Persistence
+// ============================================================================
+
+static char setting_buffer[256];
+
+Value js_call_get_setting(Value key_val) {
+  const char *key = (const char *)AS_OBJ(key_val);
+#ifdef __EMSCRIPTEN__
+  int val = EM_ASM_INT(
+      { return window.getSetting ? window.getSetting(UTF8ToString($0)) : 0; },
+      key);
+  return VAL_INT(val);
+#else
+  (void)key;
+  return VAL_INT(0);
+#endif
+}
+
+void js_call_set_setting(Value key_val, Value value_val) {
+  const char *key = (const char *)AS_OBJ(key_val);
+  int value = (int)AS_INT(value_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.setSetting)
+          window.setSetting(UTF8ToString($0), $1);
+      },
+      key, value);
+#else
+  (void)key;
+  (void)value;
+#endif
+}
+
+// ============================================================================
+// JSON Parsing Helpers (for Save Data)
+// ============================================================================
+
+static char json_code_buffer[65536];
+static char json_upgrades_buffer[1024];
+
+Value js_parse_save_code(Value json_val) {
+  const char *json = (const char *)AS_OBJ(json_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        try {
+          var obj = JSON.parse(UTF8ToString($0));
+          var code = obj.code || "";
+          var ptr = $1;
+          for (var i = 0; i < code.length && i < 65535; i++) {
+    HEAP8[ptr + i] = code.charCodeAt(i);
+          }
+          HEAP8[ptr + Math.min(code.length, 65535)] = 0;
+}
+catch(e) { HEAP8[$1] = 0; }
+},
+      json, json_code_buffer);
+return VAL_OBJ(json_code_buffer);
+#else
+  (void)json;
+  json_code_buffer[0] = 0;
+  return VAL_OBJ(json_code_buffer);
+#endif
+}
+
+Value js_parse_save_upgrades(Value json_val) {
+  const char *json = (const char *)AS_OBJ(json_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        try {
+          var obj = JSON.parse(UTF8ToString($0));
+          var upgrades = obj.upgrades || "";
+          var ptr = $1;
+          for (var i = 0; i < upgrades.length && i < 1023; i++) {
+    HEAP8[ptr + i] = upgrades.charCodeAt(i);
+          }
+          HEAP8[ptr + Math.min(upgrades.length, 1023)] = 0;
+}
+catch(e) { HEAP8[$1] = 0; }
+},
+      json, json_upgrades_buffer);
+return VAL_OBJ(json_upgrades_buffer);
+#else
+  (void)json;
+  json_upgrades_buffer[0] = 0;
+  return VAL_OBJ(json_upgrades_buffer);
+#endif
+}
+
+// Menu Art Fetching
+Value js_get_menu_art_count(void) {
+#ifdef __EMSCRIPTEN__
+  int count = EM_ASM_INT({
+    return window.getMenuArtLineCount ? window.getMenuArtLineCount() : 0;
+  });
+  return VAL_INT(count);
+#else
+  return VAL_INT(0);
+#endif
+}
+
+Value js_get_menu_art_line(Value idx_val) {
+  int idx = (int)AS_INT(idx_val);
+#ifdef __EMSCRIPTEN__
+  int result = EM_ASM_INT(
+      {
+        var line = window.getMenuArtLine ? window.getMenuArtLine($0) : "";
+        var ptr = $1;
+        // Copy string to heap
+        for (var i = 0; i < line.length && i < 65535; i++) {
+          HEAP8[ptr + i] = line.charCodeAt(i);
+        }
+        HEAP8[ptr + Math.min(line.length, 65535)] = 0;
+        return line.length;
+      },
+      idx, load_buffer);
+
+  return VAL_OBJ(load_buffer);
+#else
+  return VAL_OBJ("");
 #endif
 }

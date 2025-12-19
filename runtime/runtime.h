@@ -45,6 +45,9 @@ void gc_clear_array(Value *array, Value size_val);
 // Check if value is a string (vs integer)
 Value ds_is_string(Value v);
 
+// Get string length
+Value ds_string_length(Value str_val);
+
 // Convert integer to string
 Value ds_int_to_string(Value int_val);
 
@@ -506,5 +509,33 @@ Value ds_json_encode(Value val);
 // Audio
 // ============================================================================
 void play_sound(Value id);
+
+// ============================================================================
+// Volume Control
+// ============================================================================
+void js_call_set_volume(Value level);
+
+// ============================================================================
+// Save/Load System
+// ============================================================================
+void js_call_save_game(Value slot, Value code, Value upgrades);
+Value js_call_load_game(Value slot);
+Value js_call_save_exists(Value slot);
+
+// ============================================================================
+// Settings Persistence
+// ============================================================================
+Value js_call_get_setting(Value key);
+void js_call_set_setting(Value key, Value value);
+
+// ============================================================================
+// JSON Parsing Helpers
+// ============================================================================
+Value js_parse_save_code(Value json);
+Value js_parse_save_upgrades(Value json);
+
+// Menu Art Fetching
+Value js_get_menu_art_count(void);
+Value js_get_menu_art_line(Value idx);
 
 #endif // RUNTIME_H

@@ -19,3 +19,113 @@ SOUND_LEVEL_UP := 13.
 #play_sound_wrapper(id) >
     /play_sound/id.
 <
+
+// ============================================================================
+// JS Bridge Functions
+// ============================================================================
+
+#js_set_volume(level) >
+    /js_call_set_volume/level.
+<
+
+#js_save_game(slot) >
+    // Collect editor code as single string using newline separator
+    code := "".
+    for i in 0..editor_num_lines >
+        line := editor_lines[i].
+        code = /ds_string_concat/code/line.
+        nl := "\n".
+        code = /ds_string_concat/code/nl when i lt editor_num_lines - 1.
+    <
+    
+    // Collect upgrades as comma-separated 0/1 string
+    upg := "".
+    for i in 0..70 >
+        has := upgrades[i].
+        one := "1".
+        zero := "0".
+        upg = /ds_string_concat/upg/one when has == 1.
+        upg = /ds_string_concat/upg/zero when has == 0.
+        comma := ",".
+        upg = /ds_string_concat/upg/comma when i lt 69.
+    <
+    
+    /js_call_save_game/slot/code/upg.
+<
+
+#js_load_game(slot) >
+    // Load raw JSON data from JS
+    raw_data := /js_call_load_game/slot.
+    << 0 when raw_data == 0.
+    
+    // Parse code from saved data
+    code := /js_parse_save_code/raw_data.
+    upg := /js_parse_save_upgrades/raw_data.
+    
+    // Restore editor lines by splitting on newlines
+    // First clear existing lines
+    for i in 0..EDITOR_MAX_LINES >
+        editor_lines[i] = "".
+    <
+    
+    // Parse code - simple character-by-character newline detection
+    // Since we don't have str_split, manually parse
+    line_idx := 0.
+    current_line := "".
+    code_len := /ds_strlen/code.
+    
+    for i in 0..code_len >
+        c := /ds_string_at/code/i.
+        is_newline := c == 10.  // ASCII for \n
+        
+        // On newline, save current line and start new one
+        editor_lines[line_idx] = current_line when is_newline == 1.
+        line_idx = line_idx + 1 when is_newline == 1.
+        current_line = "" when is_newline == 1.
+        
+        // Otherwise append character to current line
+        char_str := "".
+        char_str = /ds_char_to_string/c when is_newline == 0.
+        current_line = /ds_string_concat/current_line/char_str when is_newline == 0.
+    <
+    
+    // Save final line
+    editor_lines[line_idx] = current_line.
+    editor_num_lines = line_idx + 1.
+    
+    // Restore upgrades - parse comma-separated 0/1 values
+    upg_idx := 0.
+    upg_len := /ds_strlen/upg.
+    
+    for i in 0..upg_len >
+        c := /ds_string_at/upg/i.
+        is_one := c == 49.   // ASCII for '1'
+        is_zero := c == 48.  // ASCII for '0'
+        is_comma := c == 44. // ASCII for ','
+        
+        upgrades[upg_idx] = 1 when is_one == 1.
+        upgrades[upg_idx] = 0 when is_zero == 1.
+        upg_idx = upg_idx + 1 when is_one == 1 or is_zero == 1.
+    <
+    
+    // Recalculate game state based on restored upgrades
+    /recalc_dungeon_params/.
+    /apply_buff_upgrades/.
+    
+    /console_log/"Game loaded!".
+    << 1.
+<
+
+#js_save_exists(slot) >
+    result := /js_call_save_exists/slot.
+    << result.
+<
+
+#js_get_setting(key) >
+    result := /js_call_get_setting/key.
+    << result.
+<
+
+#js_set_setting(key, value) >
+    /js_call_set_setting/key/value.
+<

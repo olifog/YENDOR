@@ -123,6 +123,7 @@ fade_alpha := 0.
     sig_was_in_box = 0.
     
     envelope_flap_open = 0.
+    fade_alpha = 0.
     
     // Start paper off-screen (will be positioned when envelope opens)
     paper_y = SCREEN_H + 100.

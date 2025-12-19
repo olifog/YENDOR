@@ -1,0 +1,706 @@
+// ============================================================================
+// Main Menu System
+// ============================================================================
+
+// Menu states
+MENU_STATE_MAIN := 0.        // Main menu (New Game, Load, Settings)
+MENU_STATE_LOAD := 1.        // Load game slot selection
+MENU_STATE_SETTINGS := 2.    // Settings panel
+
+menu_active := 1.            // Menu is active on game start
+menu_state := 0.             // Current menu state
+menu_hovered_button := -1.   // Which button is hovered (-1 = none)
+menu_volume := 100.          // Volume level (0-100)
+
+// In-game pause popup
+pause_popup_active := 0.     // Pause popup shown during gameplay
+pause_popup_state := 0.      // 0 = main, 1 = settings, 2 = save slot picker
+pause_popup_hovered := -1.   // Which button is hovered in popup
+
+// Save slot info (populated from JS)
+SAVE_SLOT_COUNT := 3.
+save_slot_exists := [0, 0, 0].
+save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
+
+// ============================================================================
+// Menu Initialization
+// ============================================================================
+
+#init_menu() >
+    menu_active = 1.
+    menu_state = MENU_STATE_MAIN.
+    menu_hovered_button = -1.
+    
+    // Load volume setting from storage
+    stored_vol := /js_get_setting/"volume".
+    menu_volume = stored_vol when stored_vol gt 0.
+    menu_volume = 100 when stored_vol == 0.
+    /js_set_volume/menu_volume.
+    
+    // Check save slots
+    /refresh_save_slots/.
+<
+
+#refresh_save_slots() >
+    for i in 0..SAVE_SLOT_COUNT >
+        exists := /js_save_exists/i.
+        save_slot_exists[i] = exists.
+    <
+<
+
+// ============================================================================
+// Menu Update
+// ============================================================================
+
+#update_menu(dt) >
+    << 0 when menu_active == 0.
+    
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    just_pressed := /input_mouse_just_pressed/.
+    
+    // Capture state at start of frame to prevent multiple state updates in one frame
+    current_state := menu_state.
+    
+    /update_menu_main/mx/my/just_pressed when current_state == MENU_STATE_MAIN.
+    /update_menu_load/mx/my/just_pressed when current_state == MENU_STATE_LOAD.
+    /update_menu_settings/mx/my/just_pressed when current_state == MENU_STATE_SETTINGS.
+<
+
+#update_menu_main(mx, my, just_pressed) >
+    // Button dimensions
+    btn_w := 200.
+    btn_h := 50.
+    btn_x := (SCREEN_W - btn_w) / 2.
+    btn_y_start := SCREEN_H / 2 - 60.
+    btn_gap := 70.
+    
+    menu_hovered_button = -1.
+    
+    // Check New Game button
+    new_y := btn_y_start.
+    in_new := mx ge btn_x and mx lt btn_x + btn_w and my ge new_y and my lt new_y + btn_h.
+    menu_hovered_button = 0 when in_new == 1.
+    /menu_start_new_game/ when in_new == 1 and just_pressed == 1.
+    
+    // Check Load Game button
+    load_y := btn_y_start + btn_gap.
+    in_load := mx ge btn_x and mx lt btn_x + btn_w and my ge load_y and my lt load_y + btn_h.
+    menu_hovered_button = 1 when in_load == 1.
+    menu_state = MENU_STATE_LOAD when in_load == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_load == 1 and just_pressed == 1.
+    
+    // Check Settings button
+    set_y := btn_y_start + btn_gap * 2.
+    in_set := mx ge btn_x and mx lt btn_x + btn_w and my ge set_y and my lt set_y + btn_h.
+    menu_hovered_button = 2 when in_set == 1.
+    menu_state = MENU_STATE_SETTINGS when in_set == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_set == 1 and just_pressed == 1.
+<
+
+#menu_start_new_game() >
+    /play_sound_wrapper/SOUND_UI_START.
+    menu_active = 0.
+    // Fully initialize intro state (clears old state from previous plays)
+    /init_intro/.
+<
+
+#update_menu_load(mx, my, just_pressed) >
+    // Back button
+    back_x := 50.
+    back_y := SCREEN_H - 80.
+    back_w := 100.
+    back_h := 40.
+    
+    in_back := mx ge back_x and mx lt back_x + back_w and my ge back_y and my lt back_y + back_h.
+    menu_hovered_button = 10 when in_back == 1.
+    menu_state = MENU_STATE_MAIN when in_back == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_back == 1 and just_pressed == 1.
+    
+    // Save slot buttons
+    slot_w := 300.
+    slot_h := 60.
+    slot_x := (SCREEN_W - slot_w) / 2.
+    slot_y_start := SCREEN_H / 2 - 100.
+    slot_gap := 80.
+    
+    for i in 0..SAVE_SLOT_COUNT >
+        slot_y := slot_y_start + i * slot_gap.
+        in_slot := mx ge slot_x and mx lt slot_x + slot_w and my ge slot_y and my lt slot_y + slot_h.
+        menu_hovered_button = 20 + i when in_slot == 1.
+        /menu_load_slot/i when in_slot == 1 and just_pressed == 1 and save_slot_exists[i] == 1.
+    <
+<
+
+#menu_load_slot(slot) >
+    /play_sound_wrapper/SOUND_UI_START.
+    
+    // Load game data from JS
+    /js_load_game/slot.
+    
+    // Skip intro, go straight to game
+    menu_active = 0.
+    intro_active = 0.
+    intro_state = INTRO_STATE_NONE.
+    
+    // Re-enable CRT shader for gameplay
+    /set_skip_crt/0.
+<
+
+#update_menu_settings(mx, my, just_pressed) >
+    mouse_down := /input_mouse_down/.
+    
+    // Back button
+    back_x := 50.
+    back_y := SCREEN_H - 80.
+    back_w := 100.
+    back_h := 40.
+    
+    in_back := mx ge back_x and mx lt back_x + back_w and my ge back_y and my lt back_y + back_h.
+    menu_hovered_button = 10 when in_back == 1.
+    menu_state = MENU_STATE_MAIN when in_back == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_back == 1 and just_pressed == 1.
+    /js_set_setting/"volume"/menu_volume when in_back == 1 and just_pressed == 1.
+    
+    // Volume slider
+    slider_x := (SCREEN_W - 300) / 2.
+    slider_y := SCREEN_H / 2.
+    slider_w := 300.
+    slider_h := 20.
+    
+    in_slider := mx ge slider_x and mx lt slider_x + slider_w and my ge slider_y - 10 and my lt slider_y + slider_h + 10.
+    
+    // Drag slider
+    drag_slider := in_slider * mouse_down.
+    new_vol := 0.
+    new_vol = (mx - slider_x) * 100 / slider_w when drag_slider == 1.
+    new_vol = 0 when new_vol lt 0.
+    new_vol = 100 when new_vol gt 100.
+    menu_volume = new_vol when drag_slider == 1.
+    /js_set_volume/menu_volume when drag_slider == 1.
+<
+
+// ============================================================================
+// Menu Rendering
+// ============================================================================
+
+#render_menu() >
+    << 0 when menu_active == 0.
+    
+    // Enable CRT effects for menu (classic terminal look)
+    /set_skip_crt/0.
+    
+    // Draw black background (as requested)
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/255.
+    
+    /render_menu_main/ when menu_state == MENU_STATE_MAIN.
+    /render_menu_load/ when menu_state == MENU_STATE_LOAD.
+    /render_menu_settings/ when menu_state == MENU_STATE_SETTINGS.
+<
+
+#render_menu_bg() >
+    count := /js_get_menu_art_count/.
+    
+    // Font settings to fit width (187 chars * 4.2px = 785px)
+    // Height will overflow (139 * 6 = 834px), centered clipping top/bottom
+    font_size := 7.
+    line_h := 6. 
+    font_id := 2. // Monospace
+    
+    // Width ~785px
+    start_x := (SCREEN_W - 785) / 2.
+    
+    // Center vertically
+    total_h := count * line_h.
+    start_y := (SCREEN_H - total_h) / 2.
+    
+    // Color (dimmed dark gray for background)
+    r := 40. g := 40. b := 40.
+    
+    for i in 0..count >
+        line := /js_get_menu_art_line/i.
+        y := start_y + i * line_h.
+        /text_draw_font/start_x/y/font_size/r/g/b/font_id/line.
+    <
+<
+
+#render_menu_main() >
+    // /render_menu_bg/.
+    
+    // Title
+    // Logo
+    // Icon: centered, text: right of center?
+    // Actually, image shows Icon LEFT and Text RIGHT.
+    // Let's center the whole group.
+    
+    // Logo Text "yendor" (centered)
+    lr := 255. lg := 255. lb := 255.
+    
+    label := "yendor".
+    sz := 48.
+    
+    // Center it
+    text_width := /text_measure/label/sz.
+    tx := (SCREEN_W - text_width) / 2.
+    ty := 135.
+    
+    /text_draw_font/tx/ty/sz/lr/lg/lb/2/label.
+    
+    btn_w := 200.
+    btn_h := 50.
+    btn_x := (SCREEN_W - btn_w) / 2.
+    btn_y_start := SCREEN_H / 2 - 60.
+    btn_gap := 70.
+    
+    // New Game button
+    new_y := btn_y_start.
+    new_hover := menu_hovered_button == 0.
+    /draw_menu_button/btn_x/new_y/btn_w/btn_h/"New Game"/new_hover.
+    
+    // Load Game button
+    load_y := btn_y_start + btn_gap.
+    load_hover := menu_hovered_button == 1.
+    /draw_menu_button/btn_x/load_y/btn_w/btn_h/"Load Game"/load_hover.
+    
+    // Settings button
+    set_y := btn_y_start + btn_gap * 2.
+    set_hover := menu_hovered_button == 2.
+    /draw_menu_button/btn_x/set_y/btn_w/btn_h/"Settings"/set_hover.
+<
+
+#render_menu_load() >
+    // Title - centered
+    load_title := "Load Game".
+    title_width := /text_measure/load_title/24.
+    title_x := (SCREEN_W - title_width) / 2.
+    title_y := 180.
+    /text_draw_font/title_x/title_y/24/180/160/120/0/load_title.
+    
+    // Save slots
+    slot_w := 300.
+    slot_h := 60.
+    slot_x := (SCREEN_W - slot_w) / 2.
+    slot_y_start := SCREEN_H / 2 - 100.
+    slot_gap := 80.
+    
+    for i in 0..SAVE_SLOT_COUNT >
+        slot_y := slot_y_start + i * slot_gap.
+        slot_hover := menu_hovered_button == 20 + i.
+        exists := save_slot_exists[i].
+        
+        // Draw slot button
+        r := 40. g := 45. b := 55.
+        r = 60 when slot_hover == 1. g = 70 when slot_hover == 1. b = 85 when slot_hover == 1.
+        r = 30 when exists == 0. g = 32 when exists == 0. b = 38 when exists == 0.
+        /draw_rect/slot_x/slot_y/slot_w/slot_h/r/g/b/255.
+        
+        // Draw slot text
+        text_x := slot_x + 20.
+        text_y := slot_y + 20.
+        tr := 200. tg := 200. tb := 200.
+        tr = 100 when exists == 0. tg = 100 when exists == 0. tb = 100 when exists == 0.
+        
+        slot_num := i + 1.
+        /text_draw/text_x/text_y/14/tr/tg/tb/"Slot".
+        /text_draw_int/(text_x + 35)/text_y/14/tr/tg/tb/slot_num.
+        
+        status_x := slot_x + 80.
+        /text_draw/status_x/text_y/14/tr/tg/tb/"- Save Data" when exists == 1.
+        /text_draw/status_x/text_y/14/tr/tg/tb/"- Empty" when exists == 0.
+    <
+    
+    // Back button
+    /draw_menu_button/50/(SCREEN_H - 80)/100/40/"Back"/(menu_hovered_button == 10).
+<
+
+#render_menu_settings() >
+    // Title - centered
+    set_title := "Settings".
+    title_width := /text_measure/set_title/24.
+    title_x := (SCREEN_W - title_width) / 2.
+    title_y := 180.
+    /text_draw_font/title_x/title_y/24/180/160/120/0/set_title.
+    
+    // Volume label
+    label_x := SCREEN_W / 2 - 150.
+    label_y := SCREEN_H / 2 - 40.
+    /text_draw/label_x/label_y/14/200/200/200/"Volume".
+    
+    // Volume slider
+    slider_x := (SCREEN_W - 300) / 2.
+    slider_y := SCREEN_H / 2.
+    slider_w := 300.
+    slider_h := 20.
+    
+    // Slider track
+    /draw_rect/slider_x/slider_y/slider_w/slider_h/40/45/55/255.
+    
+    // Slider fill
+    fill_w := slider_w * menu_volume / 100.
+    /draw_rect/slider_x/slider_y/fill_w/slider_h/80/120/180/255.
+    
+    // Slider handle
+    handle_x := slider_x + fill_w - 5.
+    /draw_rect/handle_x/(slider_y - 3)/10/(slider_h + 6)/200/200/200/255.
+    
+    // Volume percentage
+    pct_x := slider_x + slider_w + 20.
+    /text_draw_int/pct_x/slider_y/14/200/200/200/menu_volume.
+    /text_draw/(pct_x + 30)/slider_y/14/200/200/200/"%".
+    
+    // Back button
+    /draw_menu_button/50/(SCREEN_H - 80)/100/40/"Back"/(menu_hovered_button == 10).
+<
+
+#draw_menu_button(x, y, w, h, text, hovered) >
+    // NetHack / Terminal Style Button (No Box)
+    // Use Monospace font (ID 2)
+    font_id := 2.
+    font_size := 16.
+    
+    label := text.
+    
+    // Default color (dim grey/green)
+    r := 150. g := 150. b := 150.
+    
+    r = 100 when hovered == 1.
+    g = 255 when hovered == 1.
+    b = 100 when hovered == 1.
+    
+    label = /ds_string_concat/"[ "/label when hovered == 1.
+    label = /ds_string_concat/label/" ]" when hovered == 1.
+    
+    // Rough center
+    // Char width approx 0.6 * 16 = 9.6px
+    char_count := /ds_string_length/label.
+    text_w := char_count * 10. 
+    text_x := x + (w - text_w) / 2.
+    text_y := y + (h - font_size) / 2.
+    
+    /text_draw_font/text_x/text_y/font_size/r/g/b/font_id/label.
+<
+
+// ============================================================================
+// Save Game Function (called from game)
+// ============================================================================
+
+#save_game(slot) >
+    // Collect save data and send to JS
+    /js_save_game/slot.
+    /refresh_save_slots/.
+    last_message = "Game saved!".
+<
+
+// ============================================================================
+// In-Game Pause Popup (opened from settings button during gameplay)
+// ============================================================================
+
+#toggle_pause_popup() >
+    pause_popup_active = 1 - pause_popup_active.
+    pause_popup_state = 0.
+    pause_popup_hovered = -1.
+    /play_sound_wrapper/SOUND_UI_CLICK.
+<
+
+#update_pause_popup(dt) >
+    << 0 when pause_popup_active == 0.
+    
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    just_pressed := /input_mouse_just_pressed/.
+    mouse_down := /input_mouse_down/.
+    
+    // Capture state at start of frame to prevent multiple state updates in one frame
+    current_state := pause_popup_state.
+    
+    /update_pause_popup_main/mx/my/just_pressed when current_state == 0.
+    /update_pause_popup_settings/mx/my/just_pressed/mouse_down when current_state == 1.
+    /update_pause_popup_save/mx/my/just_pressed when current_state == 2.
+<
+
+#update_pause_popup_main(mx, my, just_pressed) >
+    // Popup dimensions
+    popup_w := 300.
+    popup_h := 250.
+    popup_x := (SCREEN_W - popup_w) / 2.
+    popup_y := (SCREEN_H - popup_h) / 2.
+    
+    pause_popup_hovered = -1.
+    
+    // X close button (top right)
+    close_x := popup_x + popup_w - 35.
+    close_y := popup_y + 10.
+    close_size := 25.
+    in_close := mx ge close_x and mx lt close_x + close_size and my ge close_y and my lt close_y + close_size.
+    pause_popup_hovered = 0 when in_close == 1.
+    pause_popup_active = 0 when in_close == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_close == 1 and just_pressed == 1.
+    
+    // Save Game button
+    btn_w := 200.
+    btn_h := 40.
+    btn_x := popup_x + (popup_w - btn_w) / 2.
+    btn1_y := popup_y + 70.
+    
+    in_save := mx ge btn_x and mx lt btn_x + btn_w and my ge btn1_y and my lt btn1_y + btn_h.
+    pause_popup_hovered = 3 when in_save == 1.
+    /do_quick_save/ when in_save == 1 and just_pressed == 1.
+    
+    // Main Menu button
+    btn2_y := btn1_y + btn_h + 10.
+    in_menu := mx ge btn_x and mx lt btn_x + btn_w and my ge btn2_y and my lt btn2_y + btn_h.
+    pause_popup_hovered = 1 when in_menu == 1.
+    /goto_main_menu_from_popup/ when in_menu == 1 and just_pressed == 1.
+    
+    // Settings button
+    btn3_y := btn2_y + btn_h + 10.
+    in_settings := mx ge btn_x and mx lt btn_x + btn_w and my ge btn3_y and my lt btn3_y + btn_h.
+    pause_popup_hovered = 2 when in_settings == 1.
+    pause_popup_state = 1 when in_settings == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_settings == 1 and just_pressed == 1.
+<
+
+#do_quick_save() >
+    /play_sound_wrapper/SOUND_UI_CLICK.
+    // Go to save slot picker instead of direct save
+    pause_popup_state = 2.
+    /refresh_save_slots/.
+<
+
+#goto_main_menu_from_popup() >
+    /play_sound_wrapper/SOUND_UI_CLICK.
+    pause_popup_active = 0.
+    menu_active = 1.
+    menu_state = MENU_STATE_MAIN.
+    // Reset intro so New Game works properly
+    intro_active = 0.
+    intro_state = INTRO_STATE_NONE.
+    // Refresh save slots when returning to menu
+    /refresh_save_slots/.
+<
+
+#update_pause_popup_settings(mx, my, just_pressed, mouse_down) >
+    popup_w := 300.
+    popup_h := 250.
+    popup_x := (SCREEN_W - popup_w) / 2.
+    popup_y := (SCREEN_H - popup_h) / 2.
+    
+    pause_popup_hovered = -1.
+    
+    // X close button (top right)
+    close_x := popup_x + popup_w - 35.
+    close_y := popup_y + 10.
+    close_size := 25.
+    in_close := mx ge close_x and mx lt close_x + close_size and my ge close_y and my lt close_y + close_size.
+    pause_popup_hovered = 0 when in_close == 1.
+    pause_popup_state = 0 when in_close == 1 and just_pressed == 1.
+    /js_set_setting/"volume"/menu_volume when in_close == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_close == 1 and just_pressed == 1.
+    
+    // Volume slider
+    slider_w := 200.
+    slider_h := 20.
+    slider_x := popup_x + (popup_w - slider_w) / 2.
+    slider_y := popup_y + 120.
+    
+    in_slider := mx ge slider_x and mx lt slider_x + slider_w and my ge slider_y - 10 and my lt slider_y + slider_h + 10.
+    
+    // Drag slider
+    drag_slider := in_slider * mouse_down.
+    new_vol := 0.
+    new_vol = (mx - slider_x) * 100 / slider_w when drag_slider == 1.
+    new_vol = 0 when new_vol lt 0.
+    new_vol = 100 when new_vol gt 100.
+    menu_volume = new_vol when drag_slider == 1.
+    /js_set_volume/menu_volume when drag_slider == 1.
+<
+
+#update_pause_popup_save(mx, my, just_pressed) >
+    popup_w := 300.
+    popup_h := 280.
+    popup_x := (SCREEN_W - popup_w) / 2.
+    popup_y := (SCREEN_H - popup_h) / 2.
+    
+    pause_popup_hovered = -1.
+    
+    // X close button (back to main popup)
+    close_x := popup_x + popup_w - 35.
+    close_y := popup_y + 10.
+    close_size := 25.
+    in_close := mx ge close_x and mx lt close_x + close_size and my ge close_y and my lt close_y + close_size.
+    pause_popup_hovered = 0 when in_close == 1.
+    pause_popup_state = 0 when in_close == 1 and just_pressed == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when in_close == 1 and just_pressed == 1.
+    
+    // Save slot buttons
+    slot_w := 220.
+    slot_h := 50.
+    slot_x := popup_x + (popup_w - slot_w) / 2.
+    slot_y_start := popup_y + 70.
+    slot_gap := 60.
+    
+    for i in 0..SAVE_SLOT_COUNT >
+        slot_y := slot_y_start + i * slot_gap.
+        in_slot := mx ge slot_x and mx lt slot_x + slot_w and my ge slot_y and my lt slot_y + slot_h.
+        pause_popup_hovered = 20 + i when in_slot == 1.
+        /do_save_to_slot/i when in_slot == 1 and just_pressed == 1.
+    <
+<
+
+#do_save_to_slot(slot) >
+    /play_sound_wrapper/SOUND_UI_CLICK.
+    /save_game/slot.
+    /refresh_save_slots/.
+    // Go back to main popup
+    pause_popup_state = 0.
+<
+
+#render_pause_popup() >
+    << 0 when pause_popup_active == 0.
+    
+    // Darken background
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/150.
+    
+    // Popup dimensions (taller for save slot picker)
+    popup_w := 300.
+    popup_h := 250.
+    popup_h = 280 when pause_popup_state == 2.
+    popup_x := (SCREEN_W - popup_w) / 2.
+    popup_y := (SCREEN_H - popup_h) / 2.
+    
+    // Popup background
+    /draw_rect/popup_x/popup_y/popup_w/popup_h/30/35/45/255.
+    
+    // Border
+    /draw_rect/popup_x/popup_y/popup_w/3/80/90/110/255.
+    /draw_rect/popup_x/(popup_y + popup_h - 3)/popup_w/3/80/90/110/255.
+    /draw_rect/popup_x/popup_y/3/popup_h/80/90/110/255.
+    /draw_rect/(popup_x + popup_w - 3)/popup_y/3/popup_h/80/90/110/255.
+    
+    // X close button
+    close_x := popup_x + popup_w - 35.
+    close_y := popup_y + 10.
+    close_hover := pause_popup_hovered == 0.
+    xr := 150. xg := 150. xb := 150.
+    xr = 220 when close_hover == 1. xg = 100 when close_hover == 1. xb = 100 when close_hover == 1.
+    /text_draw/close_x/close_y/18/xr/xg/xb/"X".
+    
+    /render_pause_popup_main/popup_x/popup_y/popup_w/popup_h when pause_popup_state == 0.
+    /render_pause_popup_settings/popup_x/popup_y/popup_w/popup_h when pause_popup_state == 1.
+    /render_pause_popup_save/popup_x/popup_y/popup_w/popup_h when pause_popup_state == 2.
+<
+
+#render_pause_popup_main(popup_x, popup_y, popup_w, popup_h) >
+    // Title
+    title := "PAUSED".
+    title_width := /text_measure/title/20.
+    title_x := popup_x + (popup_w - title_width) / 2.
+    title_y := popup_y + 30.
+    /text_draw/title_x/title_y/20/200/200/200/title.
+    
+    // Buttons
+    btn_w := 200.
+    btn_h := 40.
+    btn_x := popup_x + (popup_w - btn_w) / 2.
+    
+    // Save Game button
+    btn1_y := popup_y + 70.
+    btn1_hover := pause_popup_hovered == 3.
+    /draw_menu_button/btn_x/btn1_y/btn_w/btn_h/"Save Game"/btn1_hover.
+    
+    // Main Menu button
+    btn2_y := btn1_y + btn_h + 10.
+    btn2_hover := pause_popup_hovered == 1.
+    /draw_menu_button/btn_x/btn2_y/btn_w/btn_h/"Main Menu"/btn2_hover.
+    
+    // Settings button
+    btn3_y := btn2_y + btn_h + 10.
+    btn3_hover := pause_popup_hovered == 2.
+    /draw_menu_button/btn_x/btn3_y/btn_w/btn_h/"Settings"/btn3_hover.
+<
+
+#render_pause_popup_settings(popup_x, popup_y, popup_w, popup_h) >
+    // Title
+    title := "SETTINGS".
+    title_width := /text_measure/title/20.
+    title_x := popup_x + (popup_w - title_width) / 2.
+    title_y := popup_y + 30.
+    /text_draw/title_x/title_y/20/200/200/200/title.
+    
+    // Volume label
+    label := "Volume".
+    label_width := /text_measure/label/14.
+    label_x := popup_x + (popup_w - label_width) / 2.
+    label_y := popup_y + 80.
+    /text_draw/label_x/label_y/14/180/180/180/label.
+    
+    // Volume slider
+    slider_w := 200.
+    slider_h := 20.
+    slider_x := popup_x + (popup_w - slider_w) / 2.
+    slider_y := popup_y + 120.
+    
+    // Slider track
+    /draw_rect/slider_x/slider_y/slider_w/slider_h/50/55/65/255.
+    
+    // Slider fill
+    fill_w := slider_w * menu_volume / 100.
+    /draw_rect/slider_x/slider_y/fill_w/slider_h/80/120/180/255.
+    
+    // Slider handle
+    handle_x := slider_x + fill_w - 5.
+    /draw_rect/handle_x/(slider_y - 3)/10/(slider_h + 6)/200/200/200/255.
+    
+    // Volume percentage
+    pct_x := slider_x + slider_w + 10.
+    /text_draw_int/pct_x/slider_y/14/200/200/200/menu_volume.
+    /text_draw/(pct_x + 25)/slider_y/14/200/200/200/"%".
+<
+
+#render_pause_popup_save(popup_x, popup_y, popup_w, popup_h) >
+    // Title
+    title := "SAVE GAME".
+    title_width := /text_measure/title/20.
+    title_x := popup_x + (popup_w - title_width) / 2.
+    title_y := popup_y + 30.
+    /text_draw/title_x/title_y/20/200/200/200/title.
+    
+    // Save slots
+    slot_w := 220.
+    slot_h := 50.
+    slot_x := popup_x + (popup_w - slot_w) / 2.
+    slot_y_start := popup_y + 70.
+    slot_gap := 60.
+    
+    for i in 0..SAVE_SLOT_COUNT >
+        slot_y := slot_y_start + i * slot_gap.
+        slot_hover := pause_popup_hovered == 20 + i.
+        exists := save_slot_exists[i].
+        
+        // Draw slot button
+        r := 40. g := 45. b := 55.
+        r = 60 when slot_hover == 1. g = 70 when slot_hover == 1. b = 85 when slot_hover == 1.
+        /draw_rect/slot_x/slot_y/slot_w/slot_h/r/g/b/255.
+        
+        // Border
+        br := 70. bg := 80. bb := 100.
+        br = 100 when slot_hover == 1. bg = 120 when slot_hover == 1. bb = 150 when slot_hover == 1.
+        /draw_rect/slot_x/slot_y/slot_w/2/br/bg/bb/255.
+        /draw_rect/slot_x/(slot_y + slot_h - 2)/slot_w/2/br/bg/bb/255.
+        /draw_rect/slot_x/slot_y/2/slot_h/br/bg/bb/255.
+        /draw_rect/(slot_x + slot_w - 2)/slot_y/2/slot_h/br/bg/bb/255.
+        
+        // Draw slot text
+        text_x := slot_x + 15.
+        text_y := slot_y + 18.
+        tr := 200. tg := 200. tb := 200.
+        
+        slot_num := i + 1.
+        /text_draw/text_x/text_y/14/tr/tg/tb/"Slot".
+        /text_draw_int/(text_x + 35)/text_y/14/tr/tg/tb/slot_num.
+        
+        status_x := slot_x + 80.
+        /text_draw/status_x/text_y/14/120/200/120/"- Overwrite" when exists == 1.
+        /text_draw/status_x/text_y/14/150/150/150/"- Empty" when exists == 0.
+    <
+<

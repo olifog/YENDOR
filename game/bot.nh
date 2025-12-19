@@ -226,6 +226,8 @@ bot_message := "".
     // Clear execution stack and force garbage collection
     /gc_clear_exec_stack/.
     /gc_force_collect/.
+    // Auto-save on stop
+    /js_save_game/0.
 <
 
 #bot_pause() >

@@ -2,6 +2,7 @@
 // The player writes code to control the @ character
 
 @use "intro.nh".
+@use "menu.nh".
 @use "audio.nh".
 @use "bgshader.nh".
 @use "editor.nh".
@@ -184,6 +185,7 @@ LAYOUT_PADDING := 16.
     
     /init_editor/.
     /init_intro/.
+    /init_menu/.
     game_initialized = 1.
     /console_log/"Ready! Write code and click Play to run the bot.".
 <
@@ -196,6 +198,10 @@ LAYOUT_PADDING := 16.
     // Skip if not initialized
     can_run := game_initialized.
     
+    // Update menu if active
+    /update_menu/dt when can_run == 1 and menu_active == 1.
+    can_run = 0 when menu_active == 1.
+    
     // Update intro if active
     /update_intro/dt when can_run == 1 and intro_active == 1.
     can_run = 0 when intro_active == 1.
@@ -207,6 +213,10 @@ LAYOUT_PADDING := 16.
 
 #do_update(dt) >
     /calculate_layout/.
+    
+    // Handle pause popup if active (blocks other input)
+    /update_pause_popup/dt.
+    << 0 when pause_popup_active == 1.
     
     // If dead, wait for restart (use buttons on death screen)
     can_update := 1.
@@ -227,6 +237,7 @@ LAYOUT_PADDING := 16.
     // Update buttons and slider (must be before editor to intercept clicks)
     /update_slider/.
     /update_buttons/.
+    /update_settings_button/.
     /update_tech_tree/.
     
     // Update editor (handles all input)
@@ -321,6 +332,11 @@ LAYOUT_PADDING := 16.
     // Skip if not initialized
     can_run := game_initialized.
     
+    // Render menu if active
+    /text_clear/ when can_run == 1 and menu_active == 1.
+    /render_menu/ when can_run == 1 and menu_active == 1.
+    can_run = 0 when menu_active == 1.
+    
     // Render intro if active (no CRT effects)
     /text_clear/ when can_run == 1 and intro_active == 1.
     /render_intro/ when can_run == 1 and intro_active == 1.
@@ -352,10 +368,14 @@ LAYOUT_PADDING := 16.
     /draw_particles/.
     /draw_buttons/.
     /draw_slider/.
+    /draw_settings_button/.
     /render_editor/.
     
     // Tombstone on top
     /draw_tombstone/ when player_is_dead == 1.
+    
+    // Pause popup on top of everything
+    /render_pause_popup/.
 <
 
 // ============================================================================

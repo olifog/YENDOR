@@ -48,6 +48,16 @@ class AudioManager {
         console.log('[Audio] Initialized');
     }
 
+    public setVolume(level: number) {
+        // level is 0-100, map to 0.0-0.2
+        if (!this.masterGain) {
+            this.init();
+        }
+        if (this.masterGain) {
+            this.masterGain.gain.value = (level / 100) * 0.2;
+        }
+    }
+
     public play(id: number) {
         if (!this.ctx) this.init();
         if (!this.ctx || this.ctx.state === 'suspended') {

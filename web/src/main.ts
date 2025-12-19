@@ -13,8 +13,60 @@ import { audioManager } from './audio'
 
   // Expose audio function for WASM
   ; (window as any).playGameSound = (id: number) => {
-    console.log('[Native] Request Sound:', id);
     audioManager.play(id)
+  }
+
+  // Expose volume control for WASM
+  ; (window as any).setGameVolume = (level: number) => {
+    audioManager.setVolume(level);
+    localStorage.setItem('game_volume', String(level));
+  }
+
+  // Save/Load system
+  ; (window as any).saveGameData = (slot: number, code: string, upgrades: string) => {
+    const data = {
+      code: code,
+      upgrades: upgrades,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(`save_slot_${slot}`, JSON.stringify(data));
+  }
+
+  ; (window as any).loadGameData = (slot: number): string | null => {
+    const data = localStorage.getItem(`save_slot_${slot}`);
+    return data;
+  }
+
+  ; (window as any).saveSlotExists = (slot: number): number => {
+    return localStorage.getItem(`save_slot_${slot}`) ? 1 : 0;
+  }
+
+  ; (window as any).getSetting = (key: string): number => {
+    const val = localStorage.getItem(`setting_${key}`);
+    return val ? parseInt(val) : 0;
+  }
+
+  ; (window as any).setSetting = (key: string, value: number) => {
+    localStorage.setItem(`setting_${key}`, String(value));
+  }
+
+// Menu Art
+let menuArtLines: string[] = []
+fetch('/ascii_art/menu.txt')
+  .then(res => res.text())
+  .then(text => {
+    // Remove trailing newline if present and split
+    menuArtLines = text.replace(/\r\n/g, '\n').split('\n');
+  })
+  .catch(err => console.error('Failed to load menu art:', err));
+
+; (window as any).getMenuArtLineCount = () => {
+  return menuArtLines.length;
+}
+
+  ; (window as any).getMenuArtLine = (idx: number): string => {
+    if (idx < 0 || idx >= menuArtLines.length) return "";
+    return menuArtLines[idx];
   }
 
 // Initialize global window state
@@ -96,6 +148,10 @@ class Game {
     const skipCRT = window.skipCRT === 1
 
     if (skipCRT) {
+      // Ensure we're rendering to screen, not to sceneFBO from previous frame
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+
       // Call WASM game functions (which will render to text canvas)
       this.wasmModule._game_update(tagInt(dt))
       this.wasmModule._game_render()
