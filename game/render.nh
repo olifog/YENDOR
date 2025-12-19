@@ -178,6 +178,17 @@ COL_GREEN_B := 100.
     col_g = 50 when is_flashing == 1.
     col_b = 50 when is_flashing == 1.
     
+    // Stair Transition Fade Out Effect
+    // Fade to cyan (stair color) as player descends
+    fade_factor := 100.  // 100 = full brightness
+    fade_factor = stair_transition_timer * 100 / STAIR_TRANSITION_DURATION when stair_transition_active == 1.
+    fade_factor = 0 when fade_factor lt 0.
+    
+    // Apply fade: blend player color toward darkness
+    col_r = col_r * fade_factor / 100 when stair_transition_active == 1.
+    col_g = col_g * fade_factor / 100 when stair_transition_active == 1.
+    col_b = col_b * fade_factor / 100 when stair_transition_active == 1.
+    
     /text_char/px/py/TILE_H/col_r/col_g/col_b/CHAR_PLAYER.
 <
 

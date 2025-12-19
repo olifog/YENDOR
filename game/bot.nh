@@ -297,6 +297,9 @@ bot_message := "".
     tile := /get_tile/player_x/player_y.
     /bot_handle_stairs/ when tile == TILE_STAIRS.
     
+    // If stair transition started, don't check for finished - we'll restart on new level
+    << 0 when stair_transition_active == 1.
+    
     // Check if we just finished (only if not yielded mid-loop)
     << /bot_finished_message/ when bot_stmt_index ge bot_stmt_count and bot_in_loop == 0.
 <
@@ -316,6 +319,9 @@ bot_message := "".
     // Check if bot reached stairs
     tile := /get_tile/player_x/player_y.
     /bot_handle_stairs/ when tile == TILE_STAIRS.
+    
+    // If stair transition started, don't advance - we'll restart on new level
+    << 0 when stair_transition_active == 1.
     
     // If loop finished (bot_in_loop went from >0 to 0), advance to next statement
     bot_stmt_index = bot_stmt_index + 1 when was_in_loop gt 0 and bot_in_loop == 0.
@@ -517,8 +523,23 @@ bot_message := "".
 <
 
 #bot_handle_stairs() >
-    last_message = "You found the stairs! Banking gold...".
+    // Start the stair transition animation instead of immediately changing level
+    // Skip if transition already active
+    << 0 when stair_transition_active == 1.
+    
+    last_message = "You found the stairs! Descending...".
     /play_sound_wrapper/SOUND_LEVEL_UP.
+    
+    // Start the transition
+    stair_transition_active = 1.
+    stair_transition_timer = STAIR_TRANSITION_DURATION.
+    
+    // Pause the bot during transition
+    bot_yield = 1.
+<
+
+#bot_complete_stair_transition() >
+    // Called when stair transition animation completes
     
     // Calculate bonus based on difficulty upgrades (NOT dungeon level)
     bonus := /calculate_floor_bonus/.
@@ -539,17 +560,23 @@ bot_message := "".
     last_message = "Welcome to the next level!".
     /spawn_particles/player_x/player_y.
     
-    // Reset bot program to start from beginning
+    // Reset bot program to start from beginning (keep bot_is_running intact)
     bot_stmt_index = 0.
+    bot_step_timer = 0.
+    bot_ops_count = 0.
     bot_current_line = bot_stmt_lines[0] when bot_stmt_count gt 0.
     
-    // Reset loop state
+    // Reset loop state but keep running
     bot_yield = 0.
     bot_in_loop = 0.
     bot_loop_node = 0.
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    
+    // Clear transition state
+    stair_transition_active = 0.
+    stair_transition_timer = 0.
     
     bot_message = "Restarting on new level...".
 <

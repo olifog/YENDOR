@@ -231,6 +231,9 @@ LAYOUT_PADDING := 16.
     anim_timer = anim_timer - dt.
     anim_timer = 0 when anim_timer lt 0.
     
+    // Update stair transition animation
+    /update_stair_transition/dt.
+    
     // Update divider dragging (must be before other mouse handlers)
     /update_divider/.
     
@@ -243,12 +246,26 @@ LAYOUT_PADDING := 16.
     // Update editor (handles all input)
     /editor_update/dt.
     
-    // Bot execution with timing
-    /update_bot_runner/dt when bot_is_running == 1.
+    // Bot execution with timing (skip during stair transition)
+    /update_bot_runner/dt when bot_is_running == 1 and stair_transition_active == 0.
     
     // Check for death (manual or bot)
     died := /check_player_death/.
     /bot_stop/ when died == 1.
+<
+
+#update_stair_transition(dt) >
+    // Skip if not in transition
+    << 0 when stair_transition_active == 0.
+    
+    // Update timer
+    stair_transition_timer = stair_transition_timer - dt.
+    
+    // Check if transition complete
+    << 0 when stair_transition_timer gt 0.
+    
+    // Transition complete - generate new dungeon
+    /bot_complete_stair_transition/.
 <
 
 // ============================================================================
@@ -682,10 +699,10 @@ clip_h := 0.
     
     lr := 45. lg := 55. lb := 70.
     
-    // Row 0 -> Row 1: Rnd Stairs to 2 Rooms (straight)
+    // Row 0 -> Row 1: Rnd Stairs to Var Size (straight)
     /draw_tree_conn/(colm + nw / 2)/(row0 - 2)/(colm + nw / 2)/(row1 + nh + 2)/lr/lg/lb.
     
-    // Row 1 -> Row 2: 2 Rooms splits to Var Size and Kobolds
+    // Row 1 -> Row 2: Var Size splits to 2 Rooms and Kobolds
     /draw_tree_conn/(colm + nw / 2)/(row1 - 2)/(col0 + nw / 2)/(row2 + nh + 2)/lr/lg/lb.
     /draw_tree_conn/(colm + nw / 2)/(row1 - 2)/(col1 + nw / 2)/(row2 + nh + 2)/lr/lg/lb.
     
@@ -707,8 +724,8 @@ clip_h := 0.
     
     // Draw nodes
     /draw_node/colm/row0/UPGRADE_DIFF_STAIRS_RANDOM.
-    /draw_node/colm/row1/UPGRADE_DIFF_ROOM_2.
-    /draw_node/col0/row2/UPGRADE_DIFF_VAR_SIZE.
+    /draw_node/colm/row1/UPGRADE_DIFF_VAR_SIZE.
+    /draw_node/col0/row2/UPGRADE_DIFF_ROOM_2.
     /draw_node/col1/row2/UPGRADE_DIFF_KOBOLDS.
     /draw_node/col0/row3/UPGRADE_DIFF_ROOM_3.
     /draw_node/col1/row3/UPGRADE_DIFF_GOBLINS.
@@ -1173,8 +1190,8 @@ clip_h := 0.
     drow6 := row5 - nh - gy.
     
     /try_node_click/dcolm/row0/UPGRADE_DIFF_STAIRS_RANDOM/mx/my.
-    /try_node_click/dcolm/row1/UPGRADE_DIFF_ROOM_2/mx/my.
-    /try_node_click/dcol0/row2/UPGRADE_DIFF_VAR_SIZE/mx/my.
+    /try_node_click/dcolm/row1/UPGRADE_DIFF_VAR_SIZE/mx/my.
+    /try_node_click/dcol0/row2/UPGRADE_DIFF_ROOM_2/mx/my.
     /try_node_click/dcol1/row2/UPGRADE_DIFF_KOBOLDS/mx/my.
     /try_node_click/dcol0/row3/UPGRADE_DIFF_ROOM_3/mx/my.
     /try_node_click/dcol1/row3/UPGRADE_DIFF_GOBLINS/mx/my.

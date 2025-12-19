@@ -38,6 +38,11 @@ player_attack_dy := 0.
 
 player_is_dead := 0.
 
+// Stair Transition Animation
+STAIR_TRANSITION_DURATION := 500.  // Duration in ms for fade out
+stair_transition_active := 0.       // 1 if we're in a stair transition
+stair_transition_timer := 0.        // Counts down to 0
+
 // Message
 // Message
 last_message := "Write code to control @. Click Play to run.".

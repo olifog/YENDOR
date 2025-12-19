@@ -138,8 +138,8 @@ upgrades := [].
     
     // DIFFICULTY BRANCH - exponential cost scaling
     << 25 when id == UPGRADE_DIFF_STAIRS_RANDOM.   // Row 0 - Start
-    << 60 when id == UPGRADE_DIFF_ROOM_2.          // Row 1
-    << 150 when id == UPGRADE_DIFF_VAR_SIZE.       // Row 2 left
+    << 60 when id == UPGRADE_DIFF_VAR_SIZE.        // Row 1
+    << 150 when id == UPGRADE_DIFF_ROOM_2.         // Row 2 left
     << 150 when id == UPGRADE_DIFF_KOBOLDS.        // Row 2 right
     << 400 when id == UPGRADE_DIFF_ROOM_3.         // Row 3 left
     << 400 when id == UPGRADE_DIFF_GOBLINS.        // Row 3 right
@@ -270,9 +270,9 @@ upgrades := [].
     // Layout:
     //         Rnd Stairs (start)
     //              |
-    //          2 Rooms
+    //          Var Size
     //           /    \
-    //     Var Size   Kobolds
+    //      2 Rooms   Kobolds
     //        |          |
     //     3 Rooms    Goblins
     //         \       /
@@ -285,19 +285,19 @@ upgrades := [].
     // Row 0: Random Stairs is the starting node (no prereqs)
     << 1 when id == UPGRADE_DIFF_STAIRS_RANDOM.
     
-    // Row 1: 2 Rooms needs Random Stairs
+    // Row 1: Var Size needs Random Stairs
     has_stairs := /has_upgrade/UPGRADE_DIFF_STAIRS_RANDOM.
-    << has_stairs when id == UPGRADE_DIFF_ROOM_2.
+    << has_stairs when id == UPGRADE_DIFF_VAR_SIZE.
     
-    // Row 2: Var Size (left) or Kobolds (right) need 2 Rooms
-    has_room2 := /has_upgrade/UPGRADE_DIFF_ROOM_2.
-    << has_room2 when id == UPGRADE_DIFF_VAR_SIZE.
-    << has_room2 when id == UPGRADE_DIFF_KOBOLDS.
-    
-    // Row 3: 3 Rooms needs Var Size, Goblins needs Kobolds
+    // Row 2: 2 Rooms (left) or Kobolds (right) need Var Size
     has_var := /has_upgrade/UPGRADE_DIFF_VAR_SIZE.
+    << has_var when id == UPGRADE_DIFF_ROOM_2.
+    << has_var when id == UPGRADE_DIFF_KOBOLDS.
+    
+    // Row 3: 3 Rooms needs 2 Rooms, Goblins needs Kobolds
+    has_room2 := /has_upgrade/UPGRADE_DIFF_ROOM_2.
     has_kobolds := /has_upgrade/UPGRADE_DIFF_KOBOLDS.
-    << has_var when id == UPGRADE_DIFF_ROOM_3.
+    << has_room2 when id == UPGRADE_DIFF_ROOM_3.
     << has_kobolds when id == UPGRADE_DIFF_GOBLINS.
     
     // Row 4: 2 Monsters needs EITHER 3 Rooms OR Goblins (merge point)
