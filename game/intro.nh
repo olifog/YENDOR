@@ -8,7 +8,9 @@ INTRO_STATE_ENVELOPE := 1.      // Envelope waiting to be clicked
 INTRO_STATE_OPENING := 2.       // Envelope opening animation
 INTRO_STATE_LETTER_OUT := 3.    // Letter gliding out to center
 INTRO_STATE_SIGNING := 4.       // Waiting for signature
-INTRO_STATE_FADE_OUT := 5.      // Fading to game
+INTRO_STATE_CRT_OPEN := 6.    // CRT turn-on effect
+INTRO_STATE_BOOT_WAIT := 7.   // Wait on black screen before CRT open
+INTRO_STATE_FADE_OUT := 5.      // Fading to black
 
 intro_state := 1.               // Start with envelope
 intro_timer := 0.               // Animation timer
@@ -57,6 +59,7 @@ sig_box_h := 50.
 // Animation timing
 ENVELOPE_OPEN_DURATION := 400.
 LETTER_GLIDE_DURATION := 800.
+CRT_OPEN_DURATION := 800.
 
 // Fade state
 fade_alpha := 0.
@@ -137,8 +140,10 @@ fade_alpha := 0.
 #update_intro(dt) >
     << 0 when intro_active == 0.
     
-    // Tell renderer to skip CRT effects
-    /set_skip_crt/1.
+    // Tell renderer to skip CRT effects (except during CRT open phase)
+    skip_crt := 1.
+    skip_crt = 0 when intro_state == INTRO_STATE_CRT_OPEN.
+    /set_skip_crt/skip_crt.
     
     intro_timer = intro_timer + dt.
     
@@ -152,6 +157,8 @@ fade_alpha := 0.
     /update_intro_letter_out/dt when intro_state == INTRO_STATE_LETTER_OUT.
     /update_intro_signing/dt when intro_state == INTRO_STATE_SIGNING.
     /update_intro_fade_out/dt when intro_state == INTRO_STATE_FADE_OUT.
+    /update_intro_boot_wait/dt when intro_state == INTRO_STATE_BOOT_WAIT.
+    /update_intro_crt_open/dt when intro_state == INTRO_STATE_CRT_OPEN.
 <
 
 #update_intro_envelope(dt) >
@@ -318,7 +325,46 @@ fade_alpha := 0.
     fade_alpha = fade_alpha + fade_speed * dt / 1000.
     fade_alpha = 255 when fade_alpha gt 255.
     
-    /end_intro/ when fade_alpha ge 255.
+    /start_boot_wait/ when fade_alpha ge 255.
+<
+
+#start_boot_wait() >
+    intro_state = INTRO_STATE_BOOT_WAIT.
+    intro_timer = 0.
+    fade_alpha = 255.
+    // Screen is black here
+<
+
+#update_intro_boot_wait(dt) >
+    // 0ms: Black screen
+    // 200ms: Power Button Click
+    // 1500ms: Boot Beep (Post) (1.3s after click)
+    // 2150ms: CRT Start (650ms after beep starts, ~450ms after beep ends)
+
+    // Power Button
+    should_play_click := 0.
+    should_play_click = 1 when intro_timer ge 1000 and intro_timer lt 1000 + dt.
+    /play_sound/SOUND_POWER_BUTTON when should_play_click == 1.
+
+    // Boot Beep
+    should_play_beep := 0.
+    should_play_beep = 1 when intro_timer ge 1500 and intro_timer lt 1500 + dt.
+    /play_sound/SOUND_BOOT_BEEP when should_play_beep == 1.
+    
+    // Start CRT
+    /start_crt_open/ when intro_timer ge 2150.
+<
+
+#start_crt_open() >
+    intro_state = INTRO_STATE_CRT_OPEN.
+    intro_timer = 0.
+    fade_alpha = 0.
+    /play_sound/SOUND_CRT_OPEN.
+<
+
+#update_intro_crt_open(dt) >
+    // Transition to game when done
+    /end_intro/ when intro_timer ge CRT_OPEN_DURATION.
 <
 
 #end_intro() >
@@ -334,8 +380,12 @@ fade_alpha := 0.
 #render_intro() >
     << 0 when intro_active == 0.
     
-    // Clear with cream/off-white background
-    /draw_rect/0/0/SCREEN_W/SCREEN_H/235/225/210/255.
+    // Clear with cream/off-white background (unless in CRT open state)
+    // In CRT open state, we want to see the game underneath (rendered by main.nh)
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/235/225/210/255 when intro_state != INTRO_STATE_CRT_OPEN.
+    
+    // Draw CRT masking
+    /draw_intro_crt_open/ when intro_state == INTRO_STATE_CRT_OPEN.
     
     // Draw envelope first when just showing envelope (not animating letter out)
     /draw_envelope/ when intro_state == INTRO_STATE_ENVELOPE.
@@ -362,7 +412,10 @@ fade_alpha := 0.
     /draw_signature_area/ when intro_state == INTRO_STATE_FADE_OUT.
     
     // Draw signature strokes
-    /draw_signature/.
+    should_draw_sig := 0.
+    should_draw_sig = 1 when intro_state == INTRO_STATE_SIGNING.
+    should_draw_sig = 1 when intro_state == INTRO_STATE_FADE_OUT.
+    /draw_signature/ when should_draw_sig == 1.
     
     // Draw continue prompt
     /draw_continue_prompt/ when intro_state == INTRO_STATE_SIGNING and sig_point_count ge 15.
@@ -376,6 +429,86 @@ fade_alpha := 0.
     
     // Draw fade overlay
     /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/fade_alpha when fade_alpha gt 0.
+<
+
+#draw_intro_crt_open() >
+    // CRT Beam Expansion Effect
+    t := intro_timer.
+    dur := CRT_OPEN_DURATION.
+    
+    // Phase 1: Expand width (0% to 30%)
+    phase1_dur := dur * 30 / 100.
+    
+    // Phase 2: Expand height (30% to 100%)
+    phase2_dur := dur - phase1_dur.
+    
+    curr_w := 0.
+    curr_h := 8. // Minimum height (thin line)
+    
+    // Calculate current width
+    pct1 := t * 100 / phase1_dur.
+    pct1 = 100 when pct1 gt 100.
+    curr_w = SCREEN_W * pct1 / 100.
+    
+    // If in phase 2, expand height
+    is_phase2 := 0.
+    is_phase2 = 1 when t gt phase1_dur.
+    
+    t2 := t - phase1_dur.
+    pct2 := 0.
+    pct2 = t2 * 100 / phase2_dur when is_phase2 == 1.
+    pct2 = 100 when pct2 gt 100.
+    
+    // Height expands from 8 to SCREEN_H
+    curr_h = 8 + (SCREEN_H - 8) * pct2 / 100.
+    
+    // Rounded calc for masks
+    cx := SCREEN_W / 2.
+    cy := SCREEN_H / 2.
+    
+    // Draw 4 black rectangles to mask the outside
+    
+    // Top Mask: 0 to cy - h/2
+    mask_h_top := cy - curr_h / 2.
+    /draw_rect/0/0/SCREEN_W/mask_h_top/0/0/0/255 when mask_h_top gt 0.
+    
+    // Bottom Mask: cy + h/2 to H
+    mask_y_bot := cy + curr_h / 2.
+    mask_h_bot := SCREEN_H - mask_y_bot.
+    /draw_rect/0/mask_y_bot/SCREEN_W/mask_h_bot/0/0/0/255 when mask_h_bot gt 0.
+    
+    // Left Mask: 0 to cx - w/2 (between top and bottom)
+    mask_w_left := cx - curr_w / 2.
+    view_y := mask_h_top.
+    view_h := curr_h.
+    /draw_rect/0/view_y/mask_w_left/view_h/0/0/0/255 when mask_w_left gt 0.
+    
+    // Right Mask: cx + w/2 to W
+    mask_x_right := cx + curr_w / 2.
+    mask_w_right := SCREEN_W - mask_x_right.
+    /draw_rect/mask_x_right/view_y/mask_w_right/view_h/0/0/0/255 when mask_w_right gt 0.
+    
+    // Bright white flash overlay
+    // Starts at 255, fades to 0 over the duration
+    // But mostly intense at start
+    flash_alpha := 0.
+    
+    // Ease out flash: (1 - t/dur)^2 * 255
+    ft := t * 1000 / dur. // 0 to 1000
+    f_inv := 1000 - ft.
+    f_inv = 0 when f_inv lt 0.
+    
+    // Quadratic falloff
+    flash_alpha = f_inv * f_inv * 255 / 1000000.
+    
+    // Draw white overlay only in the visible area (between masks)
+    // view_x_start := mask_w_left (which is cx - curr_w/2)
+    view_x := mask_w_left.
+    // view_y is set above (mask_h_top)
+    // view_w = curr_w
+    // view_h = curr_h
+    
+    /draw_rect/view_x/view_y/curr_w/curr_h/255/255/255/flash_alpha when flash_alpha gt 10.
 <
 
 #draw_envelope_mask() >

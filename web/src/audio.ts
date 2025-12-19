@@ -11,7 +11,10 @@ export enum SoundType {
     LETTER_OPEN = 10,
     LETTER_SIGN = 11,
     GAME_OVER = 12,
-    LEVEL_UP = 13
+    LEVEL_UP = 13,
+    CRT_OPEN = 14,
+    BOOT_BEEP = 15,
+    POWER_BUTTON = 16
 }
 
 class AudioManager {
@@ -119,6 +122,18 @@ class AudioManager {
 
             case SoundType.LEVEL_UP: // Sparkly Ascend
                 this.playLevelUp(t);
+                break;
+
+            case SoundType.CRT_OPEN: // High pitch rising sine
+                this.playCrtOpen(t);
+                break;
+
+            case SoundType.BOOT_BEEP: // PC Speaker Beep
+                this.playBootBeep(t);
+                break;
+
+            case SoundType.POWER_BUTTON: // Mechanical Click
+                this.playMouseClick(t);
                 break;
         }
     }
@@ -474,6 +489,101 @@ class AudioManager {
             osc.stop(startTime + duration + 0.1);
         });
     }
+
+    private playCrtOpen(t: number) {
+        if (!this.ctx || !this.masterGain) return;
+
+        try {
+            // CRT Open: High pitched sine wave sweeping up
+            // Simulates the flyback transformer charging up
+            const osc = this.ctx!.createOscillator();
+            const gain = this.ctx!.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(8000, t);
+            osc.frequency.exponentialRampToValueAtTime(14000, t + 0.6);
+
+            // Volume logic:
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.05, t + 0.1);
+            gain.gain.linearRampToValueAtTime(0.05, t + 0.5);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+
+            osc.start(t);
+            osc.stop(t + 0.8);
+
+            // Add a low hum to give it body (power surge)
+            const hum = this.ctx!.createOscillator();
+            const humGain = this.ctx!.createGain();
+            hum.type = 'sawtooth';
+            hum.frequency.setValueAtTime(60, t); // Main hum freq
+
+            humGain.gain.setValueAtTime(0, t);
+            humGain.gain.linearRampToValueAtTime(0.1, t + 0.05);
+            humGain.gain.linearRampToValueAtTime(0, t + 0.4);
+
+            const filter = this.ctx!.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 200;
+
+            hum.connect(filter);
+            filter.connect(humGain);
+            humGain.connect(this.masterGain);
+
+            hum.start(t);
+            hum.stop(t + 0.4);
+
+            // Static crackles (static charge)
+            const crackleDur = 0.5;
+            const buffer = this.createNoiseBuffer(crackleDur);
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const noiseFilter = this.ctx!.createBiquadFilter();
+            noiseFilter.type = 'highpass';
+            noiseFilter.frequency.value = 3000;
+
+            const noiseGain = this.ctx!.createGain();
+            noiseGain.gain.setValueAtTime(0, t);
+            noiseGain.gain.linearRampToValueAtTime(0.2, t + 0.05);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+
+            noise.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(this.masterGain);
+
+            noise.start(t);
+        } catch (e) {
+            console.error('[Audio] CRT Open Error:', e);
+        }
+    }
+
+    private playBootBeep(t: number) {
+        if (!this.ctx || !this.masterGain) return;
+
+        // Classic PC Boot Beep
+        // Square wave, ~800Hz-1000Hz, short duration
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, t); // A5
+
+        gain.gain.setValueAtTime(0.1, t);
+        gain.gain.setValueAtTime(0.1, t + 0.1);
+        gain.gain.linearRampToValueAtTime(0, t + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(t);
+        osc.stop(t + 0.2);
+    }
+
+
 
     // Helper to generate fresh noise (prevents "frozen" noise patterns)
     private createNoiseBuffer(duration: number): AudioBuffer {

@@ -15,6 +15,9 @@ SOUND_LETTER_OPEN := 10.
 SOUND_LETTER_SIGN := 11.
 SOUND_GAME_OVER := 12.
 SOUND_LEVEL_UP := 13.
+SOUND_CRT_OPEN := 14.
+SOUND_BOOT_BEEP := 15.
+SOUND_POWER_BUTTON := 16.
 
 #play_sound_wrapper(id) >
     /play_sound/id.

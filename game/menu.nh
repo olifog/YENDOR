@@ -138,13 +138,10 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     // Load game data from JS
     /js_load_game/slot.
     
-    // Skip intro, go straight to game
+    // Start CRT transition
     menu_active = 0.
-    intro_active = 0.
-    intro_state = INTRO_STATE_NONE.
-    
-    // Re-enable CRT shader for gameplay
-    /set_skip_crt/0.
+    intro_active = 1.
+    /start_boot_wait/.
 <
 
 #update_menu_settings(mx, my, just_pressed) >

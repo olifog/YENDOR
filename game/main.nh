@@ -354,13 +354,25 @@ LAYOUT_PADDING := 16.
     /render_menu/ when can_run == 1 and menu_active == 1.
     can_run = 0 when menu_active == 1.
     
-    // Render intro if active (no CRT effects)
-    /text_clear/ when can_run == 1 and intro_active == 1.
-    /render_intro/ when can_run == 1 and intro_active == 1.
-    can_run = 0 when intro_active == 1.
+    // Intro rendering logic
+    // If INTRO_STATE_CRT_OPEN (6), we want to render the game BEHIND the intro
+    is_crt_open := 0.
+    is_crt_open = 1 when intro_active == 1 and intro_state == 6.
     
-    // Normal game render
-    /do_render/ when can_run == 1.
+    // Determine if we should render the game
+    should_render_game := can_run.
+    // If intro active, normally don't render game, UNLESS it's CRT open
+    should_render_game = 0 when intro_active == 1 and is_crt_open == 0.
+    
+    // Render Game
+    /do_render/ when should_render_game == 1.
+
+    // Render Intro
+    // Clear screen if intro active and NOT CRT open (standalone intro)
+    /text_clear/ when can_run == 1 and intro_active == 1 and is_crt_open == 0.
+    /render_intro/ when can_run == 1 and intro_active == 1.
+    
+    can_run = 0 when intro_active == 1.
 <
 
 #do_render() >
