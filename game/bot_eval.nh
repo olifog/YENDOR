@@ -220,11 +220,21 @@
     << /bot_builtin_look/args/env when /ds_streq/name/"look".
     << /bot_builtin_can_walk/args/env when /ds_streq/name/"can_walk".
     << /bot_builtin_print/args/env when /ds_streq/name/"print".
+    << /bot_builtin_json/args/env when /ds_streq/name/"json".
     << /bot_builtin_strcat/args/env when /ds_streq/name/"strcat".
     << /bot_builtin_rng_int/args/env when /ds_streq/name/"rng_int".
+    << /bot_builtin_list_len/args/env when /ds_streq/name/"list_len".
+    << /bot_builtin_list_create/args/env when /ds_streq/name/"list_create".
+    << /bot_builtin_list_push/args/env when /ds_streq/name/"list_push".
+    << /bot_builtin_list_get/args/env when /ds_streq/name/"list_get".
 
     // Vision APIs
     << /bot_builtin_check_surroundings/args/env when /ds_streq/name/"check_surroundings".
+    << /bot_builtin_scan_area/args/env when /ds_streq/name/"scan_area".
+    << /bot_builtin_find_nearest/args/env when /ds_streq/name/"find_nearest".
+    << /bot_builtin_get_room_info/args/env when /ds_streq/name/"get_room_info".
+    << /bot_builtin_pathfind_to/args/env when /ds_streq/name/"pathfind_to".
+    << /bot_builtin_full_map_scan/args/env when /ds_streq/name/"full_map_scan".
     
     // State APIs
     << /bot_builtin_get_hp/args/env when /ds_streq/name/"get_hp".
@@ -346,9 +356,18 @@
 <
 
 #bot_eval_prop(node, env) >
+    /console_log/"bot_eval_prop evaluating...".
     obj := /bot_eval/node->obj/env.
+    /console_log/"bot_eval_prop obj:".
+    /console_log_int/obj.
     key := node->key.
-    << /ds_object_get/obj/key.
+    /console_log/"bot_eval_prop key:".
+    /console_log/key.
+    
+    result := /ds_object_get/obj/key.
+    /console_log/"bot_eval_prop result:".
+    /console_log_int/result.
+    << result.
 <
 
 #bot_eval_lambda(node, env) >
@@ -368,7 +387,7 @@
     << node->tag | >
         TAG_LIT => (node->value)
         TAG_VAR => /bot_eval_var/node/env
-        TAG_ADD => /bot_eval/node->a/env + /bot_eval/node->b/env
+        TAG_ADD => /bot_eval_add/node/env
         TAG_DECL => /bot_eval_decl/node/env
         TAG_SEQ => /bot_eval_seq/node/env
         TAG_ASSIGN => /bot_eval_assign/node/env
@@ -417,6 +436,35 @@
     
     // Otherwise use primitive equality
     << (a == b).
+<
+
+#bot_eval_add(node, env) >
+    /console_log/"bot_eval_add evaluating...".
+    a := /bot_eval/node->a/env.
+    b := /bot_eval/node->b/env.
+    
+    // Check if either is a string (pointer)
+    is_str_a := /ds_is_string/a.
+    is_str_b := /ds_is_string/b.
+    
+    /console_log/"bot_eval_add checking types:".
+    /console_log_int/is_str_a.
+    /console_log_int/is_str_b.
+    
+    // logic: check if we should concat
+    should_concat := is_str_a or is_str_b.
+    
+    // If straightforward numeric add, do it now
+    << a + b when should_concat == 0.
+    
+    // Otherwise prepare strings
+    s1 := a.
+    s1 = /ds_int_to_string/a when is_str_a == 0.
+    
+    s2 := b.
+    s2 = /ds_int_to_string/b when is_str_b == 0.
+    
+    << /ds_string_concat/s1/s2.
 <
 
 // ============================================================================
@@ -472,31 +520,30 @@
     
     // Check if argument was a string literal in the AST
     // We need to look at the AST node for the argument, not just the evaluated value
-    arg_node := /ds_list_get/args/0.
-    is_str_lit := 0.
-    is_str_lit = 1 when arg_node->tag == TAG_STRING.
+    node := /ds_list_get/args/0.
     
-    val := /bot_eval/arg_node/env.
+    val := /bot_eval/node/env.
     
-    // Check for optional second argument (force string mode)
-    force_string := 0.
-    num_args := /ds_list_len/args.
-    force_string = /bot_eval/(/ds_list_get/args/1)/env when num_args gt 1.
+    // Auto-convert non-strings to strings (handles Ints, Lists, Objects)
+    is_str := /ds_is_string/val.
+    val = /ds_val_to_string/val when is_str == 0.
     
-    // Check heuristic for string-like value
-    heuristic := 0.
-    heuristic = /ds_is_string_like/val.
-    
-    // Store in bot_print_buffer for display
     bot_print_buffer = val.
     bot_has_print = 1.
-    bot_print_is_string = is_str_lit or force_string or heuristic.
+    bot_print_is_string = 1.
     
     << val.
 <
 
 
 // /strcat/a/b - Concatenate two strings
+// /json/val - Force convert object/list to string (JSON)
+#bot_builtin_json(args, env) >
+    node := /ds_list_get/args/0.
+    val := /bot_eval/node/env.
+    << /ds_json_encode/val.
+<
+
 #bot_builtin_strcat(args, env) >
     a := /bot_eval/(/ds_list_get/args/0)/env.
     b := /bot_eval/(/ds_list_get/args/1)/env.
@@ -526,6 +573,32 @@
 #bot_builtin_rng_int(args, env) >
     max := /bot_eval/(/ds_list_get/args/0)/env.
     << /rng_int/max.
+<
+
+// /list_len/list - Returns length of a list/array (a ds_list_len alias)
+#bot_builtin_list_len(args, env) >
+    list := /bot_eval/(/ds_list_get/args/0)/env.
+    << /ds_list_len/list.
+<
+
+// /list_create/ - Create a new empty list
+#bot_builtin_list_create(args, env) >
+    << /ds_list_create/.
+<
+
+// /list_push/list/value - Push a value to a list
+#bot_builtin_list_push(args, env) >
+    list := /bot_eval/(/ds_list_get/args/0)/env.
+    value := /bot_eval/(/ds_list_get/args/1)/env.
+    /ds_list_push/list/value.
+    << list.
+<
+
+// /list_get/list/index - Get a value from a list at index
+#bot_builtin_list_get(args, env) >
+    list := /bot_eval/(/ds_list_get/args/0)/env.
+    index := /bot_eval/(/ds_list_get/args/1)/env.
+    << /ds_list_get/list/index.
 <
 
 // /check_surroundings/ - Returns 3x3 grid of char codes
@@ -593,5 +666,628 @@
     <
     
     << grid.
+<
+
+// /scan_area/radius - Returns (2n+1)x(2n+1) grid of char codes
+// Extended version of check_surroundings with variable radius
+#bot_builtin_scan_area(args, env) >
+    radius := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    // Cap radius at 5 to limit allocations
+    // Notify user if capped
+    bot_message = "scan_area: radius capped at 5" when radius gt 5.
+    radius = 5 when radius gt 5.
+    
+    // Ensure minimum radius of 1
+    radius = 1 when radius lt 1.
+    
+    grid := /ds_list_create/.
+    py := player_y.
+    px := player_x.
+    
+    // Grid size = 2*radius + 1
+    size := radius * 2 + 1.
+    
+    // Pre-allocate strings to ensure alignment/tagging correctness
+    s_dot := /ds_char_to_string/46. // .
+    s_hash := /ds_char_to_string/35. // #
+    s_dash := /ds_char_to_string/45. // -
+    s_pipe := /ds_char_to_string/124. // |
+    s_plus := /ds_char_to_string/43. // +
+    s_dollar := /ds_char_to_string/36. // $
+    s_gt := /ds_char_to_string/62. // >
+    s_empty := /ds_char_to_string/32. // space
+    
+    for dy_offset in 0..size >
+        dy := dy_offset - radius.
+        row := /ds_list_create/.
+        
+        for dx_offset in 0..size >
+            dx := dx_offset - radius.
+            
+            ax := px + dx.
+            ay := py + dy.
+            
+            // Default: Empty/Void (Space)
+            char_code := s_empty.
+            
+            // 1. Check Entity
+            e_idx := /get_entity_at/ax/ay.
+            
+            // 2. Check Tile
+            tile := /get_tile/ax/ay.
+            
+            // Priority Logic
+            done := 0.
+            
+            // Monster?
+            is_mon := 0.
+            is_mon = 1 when e_idx != -1.
+            char_code = /ds_char_to_string/entity_type[e_idx] when is_mon == 1.
+            done = 1 when is_mon == 1.
+            
+            // Gold?
+            is_gold := 0.
+            is_gold = 1 when tile == TILE_GOLD.
+            char_code = s_dollar when is_gold == 1 and done == 0.
+            done = 1 when is_gold == 1.
+            
+            // Stairs?
+            is_stairs := 0.
+            is_stairs = 1 when tile == TILE_STAIRS.
+            char_code = s_gt when is_stairs == 1 and done == 0.
+            done = 1 when is_stairs == 1.
+            
+            // Terrain Fallback
+            char_code = s_dot when tile == TILE_FLOOR and done == 0.
+            char_code = s_hash when tile == TILE_CORRIDOR and done == 0.
+            char_code = s_dash when tile == TILE_WALL_H and done == 0.
+            char_code = s_pipe when tile == TILE_WALL_V and done == 0.
+            char_code = s_plus when tile == TILE_DOOR and done == 0.
+            
+            /ds_list_push/row/char_code.
+        <
+        /ds_list_push/grid/row.
+    <
+    
+    << grid.
+<
+
+// /find_nearest/type - Find nearest entity or item of given type
+// Returns {x, y, dist, type} or 0 if not found
+// Types: "monster", "gold", "stairs", "door", "kobold", "goblin"
+#bot_builtin_find_nearest(args, env) >
+    type_str := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    px := player_x.
+    py := player_y.
+    
+    best_x := 0.
+    best_y := 0.
+    best_dist := 9999.
+    best_type := 0.
+    found := 0.
+    
+    // Check for monster types
+    is_monster := /ds_streq/type_str/"monster".
+    is_kobold := /ds_streq/type_str/"kobold".
+    is_goblin := /ds_streq/type_str/"goblin".
+    
+    want_entity := is_monster + is_kobold + is_goblin.
+    
+    // Scan entities if looking for monsters
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        dying := entity_is_dying[i].
+        can_check := active * (1 - dying) * want_entity.
+        
+        ex := entity_x[i].
+        ey := entity_y[i].
+        etype := entity_type[i].
+        
+        // Check type match
+        type_match := 0.
+        type_match = 1 when is_monster == 1.
+        type_match = 1 when is_kobold == 1 and etype == ENTITY_KOBOLD.
+        type_match = 1 when is_goblin == 1 and etype == ENTITY_GOBLIN.
+        
+        // Calc distance
+        dx := ex - px.
+        dy := ey - py.
+        dx = 0 - dx when dx lt 0.
+        dy = 0 - dy when dy lt 0.
+        dist := dx + dy.
+        
+        // Check if better
+        is_closer := 0.
+        is_closer = 1 when dist lt best_dist.
+        
+        do_update := can_check * type_match * is_closer.
+        
+        best_x = ex when do_update == 1.
+        best_y = ey when do_update == 1.
+        best_dist = dist when do_update == 1.
+        best_type = etype when do_update == 1.
+        found = 1 when do_update == 1.
+    <
+    
+    // Scan map for gold, stairs, door
+    is_gold := /ds_streq/type_str/"gold".
+    is_stairs := /ds_streq/type_str/"stairs".
+    is_door := /ds_streq/type_str/"door".
+    
+    want_tile := is_gold + is_stairs + is_door.
+    
+    // Only scan map if needed
+    for ty in 0..MAP_HEIGHT >
+        for tx in 0..MAP_WIDTH >
+            tile := /get_tile/tx/ty.
+            
+            tile_match := 0.
+            tile_match = 1 when is_gold == 1 and tile == TILE_GOLD.
+            tile_match = 1 when is_stairs == 1 and tile == TILE_STAIRS.
+            tile_match = 1 when is_door == 1 and tile == TILE_DOOR.
+            
+            // Calc distance
+            dx := tx - px.
+            dy := ty - py.
+            dx = 0 - dx when dx lt 0.
+            dy = 0 - dy when dy lt 0.
+            dist := dx + dy.
+            
+            is_closer := 0.
+            is_closer = 1 when dist lt best_dist.
+            
+            do_update := want_tile * tile_match * is_closer.
+            
+            best_x = tx when do_update == 1.
+            best_y = ty when do_update == 1.
+            best_dist = dist when do_update == 1.
+            best_type = tile when do_update == 1.
+            found = 1 when do_update == 1.
+        <
+    <
+    
+    // Return 0 if not found
+    << 0 when found == 0.
+    
+    // Build result object
+    result := /ds_object_create/0.
+    /ds_set_prop/result/"x"/best_x.
+    /ds_set_prop/result/"y"/best_y.
+    /ds_set_prop/result/"dist"/best_dist.
+    /ds_set_prop/result/"type"/best_type.
+    
+    << result.
+<
+
+// /get_room_info/ - Analyze current room
+// Returns {in_room, width, height, exits[], entities[], items[]}
+#bot_builtin_get_room_info(args, env) >
+    px := player_x.
+    py := player_y.
+    
+    // Check if player is on floor tile (in a room)
+    tile := /get_tile/px/py.
+    in_room := 0.
+    in_room = 1 when tile == TILE_FLOOR.
+    in_room = 1 when tile == TILE_GOLD.
+    in_room = 1 when tile == TILE_STAIRS.
+    
+    result := /ds_object_create/0.
+    /ds_set_prop/result/"in_room"/in_room.
+    
+    // If not in room, return minimal info
+    << result when in_room == 0.
+    
+    // Find room bounds via flood-fill approximation
+    // We'll expand outward until we hit walls
+    min_x := px.
+    max_x := px.
+    min_y := py.
+    max_y := py.
+    
+    // Expand left
+    cx := px - 1.
+    loop when cx ge 0 >
+        t := /get_tile/cx/py.
+        is_floor := 0.
+        is_floor = 1 when t == TILE_FLOOR.
+        is_floor = 1 when t == TILE_GOLD.
+        is_floor = 1 when t == TILE_STAIRS.
+        >> when is_floor == 0.
+        min_x = cx.
+        cx = cx - 1.
+    <
+    
+    // Expand right
+    cx = px + 1.
+    loop when cx lt MAP_WIDTH >
+        t := /get_tile/cx/py.
+        is_floor := 0.
+        is_floor = 1 when t == TILE_FLOOR.
+        is_floor = 1 when t == TILE_GOLD.
+        is_floor = 1 when t == TILE_STAIRS.
+        >> when is_floor == 0.
+        max_x = cx.
+        cx = cx + 1.
+    <
+    
+    // Expand up
+    cy := py - 1.
+    loop when cy ge 0 >
+        t := /get_tile/px/cy.
+        is_floor := 0.
+        is_floor = 1 when t == TILE_FLOOR.
+        is_floor = 1 when t == TILE_GOLD.
+        is_floor = 1 when t == TILE_STAIRS.
+        >> when is_floor == 0.
+        min_y = cy.
+        cy = cy - 1.
+    <
+    
+    // Expand down
+    cy = py + 1.
+    loop when cy lt MAP_HEIGHT >
+        t := /get_tile/px/cy.
+        is_floor := 0.
+        is_floor = 1 when t == TILE_FLOOR.
+        is_floor = 1 when t == TILE_GOLD.
+        is_floor = 1 when t == TILE_STAIRS.
+        >> when is_floor == 0.
+        max_y = cy.
+        cy = cy + 1.
+    <
+    
+    width := max_x - min_x + 1.
+    height := max_y - min_y + 1.
+    
+    /ds_set_prop/result/"width"/width.
+    /ds_set_prop/result/"height"/height.
+    /ds_set_prop/result/"min_x"/min_x.
+    /ds_set_prop/result/"min_y"/min_y.
+    
+    // Find exits (doors on the room boundary)
+    exits := /ds_list_create/.
+    entities := /ds_list_create/.
+    items := /ds_list_create/.
+    
+    // Scan room area for entities/items and boundary for exits
+    for ry in (min_y - 1)..(max_y + 2) >
+        for rx in (min_x - 1)..(max_x + 2) >
+            t := /get_tile/rx/ry.
+            
+            // Check for door on boundary
+            is_boundary := 0.
+            is_boundary = 1 when rx == min_x - 1.
+            is_boundary = 1 when rx == max_x + 1.
+            is_boundary = 1 when ry == min_y - 1.
+            is_boundary = 1 when ry == max_y + 1.
+            
+            is_door := 0.
+            is_door = 1 when t == TILE_DOOR.
+            
+            add_exit := is_boundary * is_door.
+            
+            exit_obj := 0.
+            exit_obj = /ds_object_create/0 when add_exit == 1.
+            /ds_set_prop/exit_obj/"x"/rx when add_exit == 1.
+            /ds_set_prop/exit_obj/"y"/ry when add_exit == 1.
+            /ds_list_push/exits/exit_obj when add_exit == 1.
+            
+            // Check for items in room
+            is_in_room := 0.
+            is_in_room = 1 when rx ge min_x and rx le max_x and ry ge min_y and ry le max_y.
+            
+            is_item := 0.
+            is_item = 1 when t == TILE_GOLD.
+            is_item = 1 when t == TILE_STAIRS.
+            
+            add_item := is_in_room * is_item.
+            
+            item_obj := 0.
+            item_obj = /ds_object_create/0 when add_item == 1.
+            /ds_set_prop/item_obj/"x"/rx when add_item == 1.
+            /ds_set_prop/item_obj/"y"/ry when add_item == 1.
+            /ds_set_prop/item_obj/"type"/t when add_item == 1.
+            /ds_list_push/items/item_obj when add_item == 1.
+            
+            // Check for entities in room
+            e_idx := /get_entity_at/rx/ry.
+            has_entity := 0.
+            has_entity = 1 when e_idx != -1.
+            
+            add_entity := is_in_room * has_entity.
+            
+            ent_obj := 0.
+            ent_obj = /ds_object_create/0 when add_entity == 1.
+            /ds_set_prop/ent_obj/"x"/rx when add_entity == 1.
+            /ds_set_prop/ent_obj/"y"/ry when add_entity == 1.
+            /ds_set_prop/ent_obj/"type"/entity_type[e_idx] when add_entity == 1.
+            /ds_list_push/entities/ent_obj when add_entity == 1.
+        <
+    <
+    
+    /ds_set_prop/result/"exits"/exits.
+    /ds_set_prop/result/"entities"/entities.
+    /ds_set_prop/result/"items"/items.
+    
+    << result.
+<
+
+// A* Pathfinding helper arrays (reused per call, no GC pressure)
+// Using global arrays to avoid per-call allocations
+pf_open := [].
+pf_closed := [].
+pf_g := [].
+pf_f := [].
+pf_parent := [].
+
+// /pathfind_to/x/y - A* pathfinding to target
+// Returns list of {dx, dy} moves, or 0 if unreachable
+#bot_builtin_pathfind_to(args, env) >
+    tx := /bot_eval/(/ds_list_get/args/0)/env.
+    ty := /bot_eval/(/ds_list_get/args/1)/env.
+    
+    px := player_x.
+    py := player_y.
+    
+    // Already at target?
+    at_target := 0.
+    at_target = 1 when px == tx and py == ty.
+    << /ds_list_create/ when at_target == 1.
+    
+    // Check target is walkable
+    target_tile := /get_tile/tx/ty.
+    target_walkable := /can_walk/target_tile.
+    << 0 when target_walkable == 0.
+    
+    // Initialize arrays (flat index = y * MAP_WIDTH + x)
+    map_size := MAP_WIDTH * MAP_HEIGHT.
+    
+    for i in 0..map_size >
+        pf_open[i] = 0.
+        pf_closed[i] = 0.
+        pf_g[i] = 9999.
+        pf_f[i] = 9999.
+        pf_parent[i] = -1.
+    <
+    
+    // Start node
+    start_idx := py * MAP_WIDTH + px.
+    pf_open[start_idx] = 1.
+    pf_g[start_idx] = 0.
+    
+    // Heuristic (Manhattan distance)
+    hx := tx - px.
+    hy := ty - py.
+    hx = 0 - hx when hx lt 0.
+    hy = 0 - hy when hy lt 0.
+    pf_f[start_idx] = hx + hy.
+    
+    target_idx := ty * MAP_WIDTH + tx.
+    found := 0.
+    
+    // A* main loop (bounded iterations)
+    max_iter := 500.
+    iter := 0.
+    
+    loop when iter lt max_iter >
+        // Find open node with lowest f
+        best_idx := -1.
+        best_f := 99999.
+        
+        for i in 0..map_size >
+            is_open := pf_open[i].
+            f_val := pf_f[i].
+            is_better := 0.
+            is_better = 1 when f_val lt best_f.
+            
+            do_pick := is_open * is_better.
+            best_idx = i when do_pick == 1.
+            best_f = f_val when do_pick == 1.
+        <
+        
+        // No path found
+        >> when best_idx == -1.
+        
+        // Check if reached target
+        at_goal := 0.
+        at_goal = 1 when best_idx == target_idx.
+        found = 1 when at_goal == 1.
+        >> when at_goal == 1.
+        
+        // Move current to closed
+        pf_open[best_idx] = 0.
+        pf_closed[best_idx] = 1.
+        
+        // Current coords
+        cur_y := best_idx / MAP_WIDTH.
+        cur_x := best_idx - cur_y * MAP_WIDTH.
+        cur_g := pf_g[best_idx].
+        
+        // Check 4 neighbors
+        for dir in 0..4 >
+            ndx := 0.
+            ndy := 0.
+            ndx = 1 when dir == 0.
+            ndx = 0 - 1 when dir == 1.
+            ndy = 1 when dir == 2.
+            ndy = 0 - 1 when dir == 3.
+            
+            nx := cur_x + ndx.
+            ny := cur_y + ndy.
+            
+            // Bounds check
+            valid := 1.
+            valid = 0 when nx lt 0.
+            valid = 0 when ny lt 0.
+            valid = 0 when nx ge MAP_WIDTH.
+            valid = 0 when ny ge MAP_HEIGHT.
+            
+            // Skip all further processing if out of bounds
+            >< when valid == 0.
+            
+            // Calculate index (now safe since bounds checked)
+            n_idx := ny * MAP_WIDTH + nx.
+            
+            // Walkable check
+            n_tile := /get_tile/nx/ny.
+            n_walk := /can_walk/n_tile.
+            >< when n_walk == 0.
+            
+            // Not in closed?
+            in_closed := pf_closed[n_idx].
+            >< when in_closed == 1.
+            
+            // Calculate g
+            new_g := cur_g + 1.
+            old_g := pf_g[n_idx].
+            
+            // Only update if this is a better path
+            >< when new_g ge old_g.
+            
+            pf_g[n_idx] = new_g.
+            pf_parent[n_idx] = best_idx.
+            pf_open[n_idx] = 1.
+            
+            // Calculate f = g + h
+            hhx := tx - nx.
+            hhy := ty - ny.
+            hhx = 0 - hhx when hhx lt 0.
+            hhy = 0 - hhy when hhy lt 0.
+            pf_f[n_idx] = new_g + hhx + hhy.
+        <
+        
+        iter = iter + 1.
+    <
+    
+    // No path found
+    << 0 when found == 0.
+    
+    // Reconstruct path
+    path := /ds_list_create/.
+    cur := target_idx.
+    
+    path_len := 0.
+    max_path := 100.
+    
+    loop when path_len lt max_path >
+        parent := pf_parent[cur].
+        >> when parent == -1.
+        
+        cur_y := cur / MAP_WIDTH.
+        cur_x := cur - cur_y * MAP_WIDTH.
+        par_y := parent / MAP_WIDTH.
+        par_x := parent - par_y * MAP_WIDTH.
+        
+        dx := cur_x - par_x.
+        dy := cur_y - par_y.
+        
+        move := /ds_object_create/0.
+        /ds_set_prop/move/"dx"/dx.
+        /ds_set_prop/move/"dy"/dy.
+        /ds_list_push/path/move.
+        
+        cur = parent.
+        path_len = path_len + 1.
+    <
+    
+    // Reverse path (built backwards)
+    reversed := /ds_list_create/.
+    len := /ds_list_len/path.
+    
+    i := len - 1.
+    loop when i ge 0 >
+        /ds_list_push/reversed/(/ds_list_get/path/i).
+        i = i - 1.
+    <
+    
+    << reversed.
+<
+
+// /full_map_scan/ - Returns complete map state
+// Returns {width, height, tiles[], entities[], items[], player{}}
+#bot_builtin_full_map_scan(args, env) >
+    result := /ds_object_create/0.
+    /ds_set_prop/result/"width"/MAP_WIDTH.
+    /ds_set_prop/result/"height"/MAP_HEIGHT.
+    
+    // Pre-allocate strings
+    s_dot := /ds_char_to_string/46. // .
+    s_hash := /ds_char_to_string/35. // #
+    s_dash := /ds_char_to_string/45. // -
+    s_pipe := /ds_char_to_string/124. // |
+    s_plus := /ds_char_to_string/43. // +
+    s_empty := /ds_char_to_string/32. // space
+    
+    // Build tiles list (2D grid of strings)
+    tiles := /ds_list_create/.
+    for y in 0..MAP_HEIGHT >
+        row := /ds_list_create/.
+        for x in 0..MAP_WIDTH >
+            t := /get_tile/x/y.
+            
+            // Map tile to string
+            // Default: Space
+            val := s_empty.
+            val = s_dot when t == TILE_FLOOR.
+            val = s_hash when t == TILE_CORRIDOR.
+            val = s_dash when t == TILE_WALL_H.
+            val = s_pipe when t == TILE_WALL_V.
+            val = s_plus when t == TILE_DOOR.
+            
+            /ds_list_push/row/val.
+        <
+        /ds_list_push/tiles/row.
+    <
+    /ds_set_prop/result/"tiles"/tiles.
+    
+    // Build entities list
+    entities := /ds_list_create/.
+    for i in 0..MAX_ENTITIES >
+        active := entity_active[i].
+        dying := entity_is_dying[i].
+        can_add := active * (1 - dying).
+        
+        ent := 0.
+        ent = /ds_object_create/0 when can_add == 1.
+        /ds_set_prop/ent/"x"/entity_x[i] when can_add == 1.
+        /ds_set_prop/ent/"y"/entity_y[i] when can_add == 1.
+        /ds_set_prop/ent/"type"/entity_type[i] when can_add == 1.
+        /ds_set_prop/ent/"hp"/entity_hp[i] when can_add == 1.
+        /ds_list_push/entities/ent when can_add == 1.
+    <
+    /ds_set_prop/result/"entities"/entities.
+    
+    // Build items list (gold, stairs)
+    items := /ds_list_create/.
+    for y in 0..MAP_HEIGHT >
+        for x in 0..MAP_WIDTH >
+            t := /get_tile/x/y.
+            is_item := 0.
+            is_item = 1 when t == TILE_GOLD.
+            is_item = 1 when t == TILE_STAIRS.
+            
+            item := 0.
+            item = /ds_object_create/0 when is_item == 1.
+            /ds_set_prop/item/"x"/x when is_item == 1.
+            /ds_set_prop/item/"y"/y when is_item == 1.
+            /ds_set_prop/item/"type"/t when is_item == 1.
+            /ds_list_push/items/item when is_item == 1.
+        <
+    <
+    /ds_set_prop/result/"items"/items.
+    
+    // Player info
+    player := /ds_object_create/0.
+    /ds_set_prop/player/"x"/player_x.
+    /ds_set_prop/player/"y"/player_y.
+    /ds_set_prop/player/"hp"/player_hp.
+    /ds_set_prop/player/"max_hp"/player_max_hp.
+    /ds_set_prop/player/"gold"/player_gold.
+    /ds_set_prop/result/"player"/player.
+    
+    << result.
 <
 

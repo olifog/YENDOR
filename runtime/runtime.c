@@ -20,6 +20,14 @@
 // Garbage Collector
 // ============================================================================
 
+// Type Masks for Handles (Distinguish Integers from Handles)
+// 0x10000000 = Object Handle (Bit 28)
+// 0x20000000 = List Handle (Bit 29)
+// These bits are safe in signed 32-bit positive integers even after << 1
+// tagging
+#define TYPE_MASK_OBJ 0x10000000
+#define TYPE_MASK_LIST 0x20000000
+
 #define GC_MAX_ALLOCATIONS 131072 // Max tracked allocations
 
 typedef enum {
@@ -349,24 +357,26 @@ static void init_objects(void) {
   objects_initialized = 1;
 }
 
-static Value alloc_object(void) {
+static int alloc_object_idx(void) {
   init_objects();
   for (int i = 1; i < MAX_OBJECTS; i++) {
     if (!objects[i].in_use) {
       objects[i].in_use = 1;
       objects[i].marked = 0;
       objects[i].prop_count = 0;
-      return VAL_INT(i);
+      return i;
     }
   }
-  return VAL_INT(0);
+  return 0;
 }
 
 Value ds_object_create(Value count_val, ...) {
   int count = (int)AS_INT(count_val);
-  Value handle = alloc_object();
-  if (AS_INT(handle) == 0)
+  int idx = alloc_object_idx();
+  if (idx == 0)
     return VAL_INT(0);
+
+  Value handle = VAL_INT(idx | TYPE_MASK_OBJ);
 
   va_list args;
   va_start(args, count_val);
@@ -383,7 +393,13 @@ Value ds_object_create(Value count_val, ...) {
 
 Value ds_object_get(Value obj_val, Value key_val) {
   const char *key = (const char *)AS_OBJ(key_val);
-  long obj = AS_INT(obj_val);
+  long handle = AS_INT(obj_val);
+
+  // Validate Object Mask
+  if ((handle & TYPE_MASK_OBJ) != TYPE_MASK_OBJ)
+    return VAL_INT(0);
+  long obj = handle & ~TYPE_MASK_OBJ;
+
   if (obj <= 0 || obj >= MAX_OBJECTS)
     return VAL_INT(0);
   if (!objects[obj].in_use)
@@ -401,12 +417,23 @@ void ds_object_set(Value *obj, Value key_val, Value value) {
   const char *key = (const char *)AS_OBJ(key_val);
   Value handle_val = *obj;
   long handle = AS_INT(handle_val);
-  if (handle <= 0 || handle >= MAX_OBJECTS) {
-    // Auto-allocate if null
-    handle_val = alloc_object();
-    handle = AS_INT(handle_val);
-    *obj = handle_val;
+
+  // Auto-allocate if null/zero
+  if (handle == 0) {
+    int idx = alloc_object_idx();
+    if (idx == 0)
+      return;
+    handle = idx | TYPE_MASK_OBJ;
+    *obj = VAL_INT(handle);
+  } else {
+    // Validate existing handle
+    if ((handle & TYPE_MASK_OBJ) != TYPE_MASK_OBJ)
+      return; // Not an object, ignore
+    handle = handle & ~TYPE_MASK_OBJ;
   }
+
+  if (handle <= 0 || handle >= MAX_OBJECTS)
+    return;
 
   if (!objects[handle].in_use) {
     return;
@@ -437,8 +464,9 @@ void ds_object_set(Value *obj, Value key_val, Value value) {
 }
 
 void ds_set_prop(Value obj_val, Value key_val, Value value) {
-  long obj = AS_INT(obj_val);
-  if (obj <= 0 || obj >= MAX_OBJECTS)
+  long handle = AS_INT(obj_val);
+  // Validate mask before passing address (though ds_object_set checks too)
+  if ((handle & TYPE_MASK_OBJ) != TYPE_MASK_OBJ)
     return;
 
   // We need to pass a pointer, but obj_val itself is the handle
@@ -570,6 +598,19 @@ Value ds_string_delete_char(Value str_val, Value pos_val) {
   return VAL_OBJ(result);
 }
 
+// Convert integer to string
+Value ds_int_to_string(Value int_val) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%ld", AS_INT(int_val));
+
+  size_t len = strlen(buf);
+  char *result = gc_alloc(len + 1, GC_TYPE_STRING);
+  if (!result)
+    return VAL_OBJ("");
+  strcpy(result, buf);
+  return VAL_OBJ(result);
+}
+
 // Concatenate two strings
 Value ds_string_concat(Value str1_val, Value str2_val) {
   const char *str1 = (const char *)AS_OBJ(str1_val);
@@ -634,14 +675,18 @@ Value ds_list_create(void) {
       lists[i].capacity = 16;
       lists[i].items = (Value *)gc_alloc(lists[i].capacity * sizeof(Value),
                                          GC_TYPE_LIST_ITEMS);
-      return VAL_INT(i);
+      return VAL_INT(i | TYPE_MASK_LIST);
     }
   }
   return VAL_INT(0);
 }
 
 Value ds_list_push(Value list_val, Value value) {
-  long list = AS_INT(list_val);
+  long handle = AS_INT(list_val);
+  if ((handle & TYPE_MASK_LIST) != TYPE_MASK_LIST)
+    return VAL_INT(0);
+  long list = handle & ~TYPE_MASK_LIST;
+
   if (list <= 0 || list >= MAX_LISTS)
     return VAL_INT(0);
   if (!lists[list].in_use)
@@ -670,7 +715,11 @@ Value ds_list_push(Value list_val, Value value) {
 }
 
 Value ds_list_get(Value list_val, Value index_val) {
-  long list = AS_INT(list_val);
+  long handle = AS_INT(list_val);
+  if ((handle & TYPE_MASK_LIST) != TYPE_MASK_LIST)
+    return VAL_INT(0);
+  long list = handle & ~TYPE_MASK_LIST;
+
   long index = AS_INT(index_val);
   if (list <= 0 || list >= MAX_LISTS)
     return VAL_INT(0);
@@ -683,12 +732,188 @@ Value ds_list_get(Value list_val, Value index_val) {
 }
 
 Value ds_list_len(Value list_val) {
-  long list = AS_INT(list_val);
+  long handle = AS_INT(list_val);
+  if ((handle & TYPE_MASK_LIST) != TYPE_MASK_LIST)
+    return VAL_INT(0);
+  long list = handle & ~TYPE_MASK_LIST;
+
   if (list <= 0 || list >= MAX_LISTS)
     return VAL_INT(0);
   if (!lists[list].in_use)
     return VAL_INT(0);
   return VAL_INT(lists[list].count);
+}
+
+// Check if a value is a valid list handle
+Value ds_is_list(Value val) {
+  if (!IS_INT(val))
+    return VAL_INT(0);
+  long handle = AS_INT(val);
+  if ((handle & TYPE_MASK_LIST) != TYPE_MASK_LIST)
+    return VAL_INT(0);
+  long id = handle & ~TYPE_MASK_LIST;
+
+  if (id <= 0 || id >= MAX_LISTS)
+    return VAL_INT(0);
+  return VAL_INT(lists[id].in_use);
+}
+
+// Convert a list to a string representation "[a, b, c]"
+// Handles nested lists recursively with depth limit
+// Helper for recursion
+static void val_to_string_recursive(Value val, char *buf, int buf_size,
+                                    int *pos, int depth, int force_type) {
+  if (depth > 10) {
+    int len = snprintf(buf + *pos, buf_size - *pos, "...");
+    *pos += len;
+    return;
+  }
+
+  if (!IS_INT(val)) {
+    // String
+    const char *str = (const char *)AS_OBJ(val);
+    if (str) {
+      int len = snprintf(buf + *pos, buf_size - *pos, "\"%s\"", str);
+      *pos += len;
+    } else {
+      int len = snprintf(buf + *pos, buf_size - *pos, "null");
+      *pos += len;
+    }
+    return;
+  }
+
+  long id = AS_INT(val);
+
+  long obj_idx = -1;
+  long list_idx = -1;
+
+  if ((id & TYPE_MASK_OBJ) == TYPE_MASK_OBJ) {
+    obj_idx = id & ~TYPE_MASK_OBJ;
+  } else if ((id & TYPE_MASK_LIST) == TYPE_MASK_LIST) {
+    list_idx = id & ~TYPE_MASK_LIST;
+  }
+
+  // Auto Mode includes 0 and legacy 3
+  int is_auto = (force_type == 0 || force_type == 3);
+
+  // Try Object
+  if ((force_type == 1) || (is_auto && obj_idx != -1)) {
+    long idx = (force_type == 1) ? id : obj_idx;
+    // Unwrap if forced handle provided
+    if ((idx & TYPE_MASK_OBJ) == TYPE_MASK_OBJ)
+      idx &= ~TYPE_MASK_OBJ;
+
+    if (idx > 0 && idx < MAX_OBJECTS && objects[idx].in_use) {
+      int len = snprintf(buf + *pos, buf_size - *pos, "{");
+      *pos += len;
+
+      for (int i = 0; i < objects[idx].prop_count && *pos < buf_size - 10;
+           i++) {
+        if (i > 0) {
+          len = snprintf(buf + *pos, buf_size - *pos, ", ");
+          *pos += len;
+        }
+        len = snprintf(buf + *pos, buf_size - *pos,
+                       "%s: ", objects[idx].props[i].key);
+        *pos += len;
+        // Recurse with Auto
+        val_to_string_recursive(objects[idx].props[i].value, buf, buf_size, pos,
+                                depth + 1, 0);
+      }
+      len = snprintf(buf + *pos, buf_size - *pos, "}");
+      *pos += len;
+      return;
+    }
+  }
+
+  // Try List
+  if ((force_type == 2) || (is_auto && list_idx != -1)) {
+    long idx = (force_type == 2) ? id : list_idx;
+    // Unwrap
+    if ((idx & TYPE_MASK_LIST) == TYPE_MASK_LIST)
+      idx &= ~TYPE_MASK_LIST;
+
+    if (idx > 0 && idx < MAX_LISTS && lists[idx].in_use) {
+      snprintf(buf + *pos, buf_size - *pos, "[");
+      *pos += strlen(buf + *pos);
+
+      for (int i = 0; i < lists[idx].count && *pos < buf_size - 10; i++) {
+        if (i > 0) {
+          snprintf(buf + *pos, buf_size - *pos, ", ");
+          *pos += strlen(buf + *pos);
+        }
+        val_to_string_recursive(lists[idx].items[i], buf, buf_size, pos,
+                                depth + 1, 0);
+      }
+      snprintf(buf + *pos, buf_size - *pos, "]");
+      *pos += strlen(buf + *pos);
+      return;
+    }
+  }
+
+  // Plain Integer
+  int len = snprintf(buf + *pos, buf_size - *pos, "%ld", id);
+  *pos += len;
+}
+
+// Public: List to String
+Value ds_list_to_string(Value list_val) {
+  static char buffer[4096];
+  int pos = 0;
+  // Force type 2 (List)
+  val_to_string_recursive(list_val, buffer, sizeof(buffer), &pos, 0, 2);
+
+  char *result = (char *)gc_alloc(pos + 1, GC_TYPE_STRING);
+  if (result) {
+    memcpy(result, buffer, pos + 1);
+    return VAL_OBJ(result);
+  }
+  return VAL_OBJ(buffer);
+}
+
+// Public: Object to String
+Value ds_object_to_string(Value obj_val) {
+  static char buffer[4096];
+  int pos = 0;
+  // Force type 1 (Object)
+  val_to_string_recursive(obj_val, buffer, sizeof(buffer), &pos, 0, 1);
+
+  char *result = (char *)gc_alloc(pos + 1, GC_TYPE_STRING);
+  if (result) {
+    memcpy(result, buffer, pos + 1);
+    return VAL_OBJ(result);
+  }
+  return VAL_OBJ(buffer);
+}
+
+// Public: Auto to String
+Value ds_val_to_string(Value val) {
+  static char buffer[4096];
+  int pos = 0;
+  // Force type 0 (Auto)
+  val_to_string_recursive(val, buffer, sizeof(buffer), &pos, 0, 0);
+
+  char *result = (char *)gc_alloc(pos + 1, GC_TYPE_STRING);
+  if (result) {
+    memcpy(result, buffer, pos + 1);
+    return VAL_OBJ(result);
+  }
+  return VAL_OBJ(buffer);
+}
+
+// Public: JSON Encode (Smart Auto - Try Object, Try List)
+Value ds_json_encode(Value val) {
+  static char buffer[4096];
+  int pos = 0;
+  // Force type 3 (Smart Auto)
+  val_to_string_recursive(val, buffer, sizeof(buffer), &pos, 0, 3);
+
+  char *result = (char *)gc_alloc(pos + 1, GC_TYPE_STRING);
+  if (result) {
+    memcpy(result, buffer, pos + 1);
+    return VAL_OBJ(result);
+  }
+  return VAL_OBJ(buffer);
 }
 
 // ============================================================================
@@ -1050,38 +1275,38 @@ static void gc_mark_value(Value val) {
     // Pointer type (String)
     gc_mark_ptr((void *)AS_OBJ(val));
   } else {
-    // Integer type - could be an Object handle or List handle
+    // Integer type - could be a Masked Object handle or Masked List handle
     long id = AS_INT(val);
 
-    // Check if it's a valid object handle
-    if (id > 0 && id < MAX_OBJECTS && objects[id].in_use &&
-        !objects[id].marked) {
-      objects[id].marked = 1;
-      // Recurse into properties
-      for (int i = 0; i < objects[id].prop_count; i++) {
-        gc_mark_value(objects[id].props[i].value); // Value (recursive)
-        // Keys are always strings (pointers)
-        if (objects[id].props[i].key) {
-          gc_mark_ptr(objects[id].props[i].key);
+    // Check for Object Mask
+    if ((id & TYPE_MASK_OBJ) == TYPE_MASK_OBJ) {
+      long idx = id & ~TYPE_MASK_OBJ;
+      if (idx > 0 && idx < MAX_OBJECTS && objects[idx].in_use &&
+          !objects[idx].marked) {
+        objects[idx].marked = 1;
+        // Recurse
+        for (int i = 0; i < objects[idx].prop_count; i++) {
+          gc_mark_value(objects[idx].props[i].value);
+          if (objects[idx].props[i].key) {
+            gc_mark_ptr(objects[idx].props[i].key);
+          }
         }
       }
     }
-
-    // Check if it's a valid list handle
-    // Note: An integer X could theoretically be both Object X and List X.
-    // In a dynamic untyped system with overlapping ID spaces, we must
-    // conservatively mark *both*.
-    if (id > 0 && id < MAX_LISTS && lists[id].in_use && !lists[id].marked) {
-      lists[id].marked = 1;
-      // Mark the backing array itself
-      if (lists[id].items) {
-        gc_mark_ptr(lists[id].items);
-      }
-      // Recurse into items
-      for (int i = 0; i < lists[id].count; i++) {
-        gc_mark_value(lists[id].items[i]);
+    // Check for List Mask
+    else if ((id & TYPE_MASK_LIST) == TYPE_MASK_LIST) {
+      long idx = id & ~TYPE_MASK_LIST;
+      if (idx > 0 && idx < MAX_LISTS && lists[idx].in_use &&
+          !lists[idx].marked) {
+        lists[idx].marked = 1;
+        if (lists[idx].items)
+          gc_mark_ptr(lists[idx].items);
+        for (int i = 0; i < lists[idx].count; i++) {
+          gc_mark_value(lists[idx].items[i]);
+        }
       }
     }
+    // Else Plain Integer - Do Nothing
   }
 }
 
@@ -1634,20 +1859,22 @@ static uint32_t rng_state = 1;
 
 void rng_seed(Value seed) {
   rng_state = (uint32_t)AS_INT(seed);
-  if (rng_state == 0) rng_state = 1; // State must be non-zero
+  if (rng_state == 0)
+    rng_state = 1; // State must be non-zero
 }
 
 Value rng_int(Value max) {
   long mx = AS_INT(max);
-  if (mx <= 0) return VAL_INT(0);
-  
+  if (mx <= 0)
+    return VAL_INT(0);
+
   // xorshift32
   uint32_t x = rng_state;
   x ^= x << 13;
   x ^= x >> 17;
   x ^= x << 5;
   rng_state = x;
-  
+
   return VAL_INT(x % (uint32_t)mx);
 }
 
@@ -1658,7 +1885,7 @@ float rng_float(void) {
   x ^= x >> 17;
   x ^= x << 5;
   rng_state = x;
-  
+
   return (float)x / (float)UINT32_MAX;
 }
 
