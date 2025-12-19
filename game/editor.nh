@@ -122,6 +122,16 @@ undo_position := 0.  // Current position in undo stack
 undo_in_progress := 0.
 
 // ============================================================================
+// Code Folding State
+// ============================================================================
+
+// fold_state[i] = 0 means not folded
+// fold_state[i] = 1 means this line is a fold header and is collapsed
+// Lines inside a collapsed fold are skipped during rendering
+fold_state := [].
+FOLD_MAX_LINES := 100.
+
+// ============================================================================
 // Colors
 // ============================================================================
 
@@ -162,6 +172,50 @@ ED_SCROLLBAR_TRACK_B := 45.
 ED_SCROLLBAR_THUMB_R := 80.
 ED_SCROLLBAR_THUMB_G := 90.
 ED_SCROLLBAR_THUMB_B := 110.
+
+// ============================================================================
+// Syntax Highlighting Colors
+// ============================================================================
+
+// Keywords: loop, when, unless, if, else, for, in, and, or, not
+SYN_KEYWORD_R := 200.
+SYN_KEYWORD_G := 140.
+SYN_KEYWORD_B := 255.
+
+// Functions: #name and /calls/
+SYN_FUNCTION_R := 110.
+SYN_FUNCTION_G := 200.
+SYN_FUNCTION_B := 255.
+
+// Strings: "..."
+SYN_STRING_R := 220.
+SYN_STRING_G := 190.
+SYN_STRING_B := 120.
+
+// Numbers: 123, 3.14f
+SYN_NUMBER_R := 180.
+SYN_NUMBER_G := 230.
+SYN_NUMBER_B := 180.
+
+// Comments: // ...
+SYN_COMMENT_R := 100.
+SYN_COMMENT_G := 110.
+SYN_COMMENT_B := 130.
+
+// Operators: + - * / % := = == != => -> |
+SYN_OPERATOR_R := 255.
+SYN_OPERATOR_G := 180.
+SYN_OPERATOR_B := 120.
+
+// Scope markers: > < << >>
+SYN_SCOPE_R := 140.
+SYN_SCOPE_G := 190.
+SYN_SCOPE_B := 255.
+
+// Punctuation: . , ( ) [ ] { }
+SYN_PUNCT_R := 180.
+SYN_PUNCT_G := 180.
+SYN_PUNCT_B := 180.
 
 // ============================================================================
 // Initialization
@@ -209,11 +263,14 @@ ED_SCROLLBAR_THUMB_B := 110.
     editor_lines[35] = "<".
     editor_num_lines = 36.
     
+    // Initialize fold_state for all lines to 0 (not collapsed)
+    for i in 0..editor_num_lines >
+        fold_state[i] = 0.
+    <
+    
     editor_cursor_line = 2.
     editor_cursor_col = 0.
     has_selection = 0.
-    
-    /console_log/"Editor ready!".
 <
 
 #set_editor_bounds(x, y, w, h) >
@@ -383,6 +440,393 @@ ED_SCROLLBAR_THUMB_B := 110.
     << 32 when key == KEY_SPACE.
     
     << 0.
+<
+
+// ============================================================================
+// Syntax Highlighting - Token Types
+// ============================================================================
+
+SYN_TOK_TEXT := 0.
+SYN_TOK_KEYWORD := 1.
+SYN_TOK_FUNCTION := 2.
+SYN_TOK_STRING := 3.
+SYN_TOK_NUMBER := 4.
+SYN_TOK_COMMENT := 5.
+SYN_TOK_OPERATOR := 6.
+SYN_TOK_SCOPE := 7.
+SYN_TOK_PUNCT := 8.
+
+// ============================================================================
+// Syntax Highlighting - Character Classification
+// ============================================================================
+
+#syn_is_digit(c) => c ge 48 and c le 57.
+#syn_is_alpha(c) => (c ge 65 and c le 90) or (c ge 97 and c le 122) or c == 95.
+#syn_is_space(c) => c == 32 or c == 9.
+
+// ============================================================================
+// Syntax Highlighting - Keyword Detection
+// ============================================================================
+
+#syn_is_keyword(word) >
+    << 1 when /ds_streq/word/"loop".
+    << 1 when /ds_streq/word/"when".
+    << 1 when /ds_streq/word/"unless".
+    << 1 when /ds_streq/word/"if".
+    << 1 when /ds_streq/word/"else".
+    << 1 when /ds_streq/word/"for".
+    << 1 when /ds_streq/word/"in".
+    << 1 when /ds_streq/word/"and".
+    << 1 when /ds_streq/word/"or".
+    << 1 when /ds_streq/word/"not".
+    << 1 when /ds_streq/word/"lt".
+    << 1 when /ds_streq/word/"gt".
+    << 1 when /ds_streq/word/"le".
+    << 1 when /ds_streq/word/"ge".
+    << 0.
+<
+
+// ============================================================================
+// Syntax Highlighting - Draw a single line with colors
+// ============================================================================
+
+#draw_highlighted_line(line, x, y, size) >
+    len := /ds_strlen/line.
+    << 0 when len == 0.
+    
+    col := 0.
+    
+    loop >
+        >> when col ge len.
+        
+        c := /ds_string_at/line/col.
+        
+        // Skip whitespace (draw nothing, just advance)
+        col = /syn_skip_space/line/col when /syn_is_space/c.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for comment (// to end of line)
+        next := 0.
+        next = /ds_string_at/line/(col + 1) when col + 1 lt len.
+        col = /syn_draw_comment/line/col/x/y/size when c == 47 and next == 47.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for string
+        col = /syn_draw_string/line/col/x/y/size when c == 34.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for number
+        col = /syn_draw_number/line/col/x/y/size when /syn_is_digit/c.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for function definition (#) or call (/)
+        col = /syn_draw_func_def/line/col/x/y/size when c == 35.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        col = /syn_draw_func_call/line/col/x/y/size when c == 47.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for identifier/keyword
+        col = /syn_draw_ident/line/col/x/y/size when /syn_is_alpha/c.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for scope markers: > < << >> ><
+        col = /syn_draw_scope/line/col/x/y/size when c == 60 or c == 62.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Check for operators: + - * % := = == != => -> |
+        col = /syn_draw_operator/line/col/x/y/size when /syn_is_operator_char/c.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Punctuation: . , ( ) [ ] { } :
+        col = /syn_draw_punct/line/col/x/y/size when /syn_is_punct/c.
+        >> when col ge len.
+        c = /ds_string_at/line/col when col lt len.
+        
+        // Fallback: draw as text
+        px := x + /col_to_px/col.
+        /text_char/px/y/size/ED_TEXT_R/ED_TEXT_G/ED_TEXT_B/c when col lt len.
+        col = col + 1.
+    <
+<
+
+#syn_skip_space(line, col) >
+    len := /ds_strlen/line.
+    loop >
+        >> when col ge len.
+        c := /ds_string_at/line/col.
+        >> when not /syn_is_space/c.
+        col = col + 1.
+    <
+    << col.
+<
+
+#syn_is_operator_char(c) >
+    << 1 when c == 43.  // +
+    << 1 when c == 45.  // -
+    << 1 when c == 42.  // *
+    << 1 when c == 37.  // %
+    << 1 when c == 61.  // =
+    << 1 when c == 33.  // !
+    << 1 when c == 124. // |
+    << 1 when c == 92.  // \
+    << 0.
+<
+
+#syn_is_punct(c) >
+    << 1 when c == 46.  // .
+    << 1 when c == 44.  // ,
+    << 1 when c == 40.  // (
+    << 1 when c == 41.  // )
+    << 1 when c == 91.  // [
+    << 1 when c == 93.  // ]
+    << 1 when c == 123. // {
+    << 1 when c == 125. // }
+    << 1 when c == 58.  // :
+    << 0.
+<
+
+#syn_draw_comment(line, col, x, y, size) >
+    // Draw from col to end of line as comment
+    len := /ds_strlen/line.
+    
+    loop >
+        >> when col ge len.
+        c := /ds_string_at/line/col.
+        px := x + /col_to_px/col.
+        /text_char/px/y/size/SYN_COMMENT_R/SYN_COMMENT_G/SYN_COMMENT_B/c.
+        col = col + 1.
+    <
+    
+    << col.
+<
+
+#syn_draw_string(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    
+    // Draw opening quote
+    c := /ds_string_at/line/col.
+    px := x + /col_to_px/col.
+    /text_char/px/y/size/SYN_STRING_R/SYN_STRING_G/SYN_STRING_B/c.
+    col = col + 1.
+    
+    // Draw string contents until closing quote
+    loop >
+        >> when col ge len.
+        c = /ds_string_at/line/col.
+        px = x + /col_to_px/col.
+        /text_char/px/y/size/SYN_STRING_R/SYN_STRING_G/SYN_STRING_B/c.
+        col = col + 1.
+        >> when c == 34. // closing "
+    <
+    
+    << col.
+<
+
+#syn_draw_number(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    
+    // Draw digits and optional .digits and f suffix
+    loop >
+        >> when col ge len.
+        c := /ds_string_at/line/col.
+        is_num := /syn_is_digit/c.
+        is_dot := (c == 46).
+        is_f := (c == 102). // 'f' for float suffix
+        >> when not is_num and not is_dot and not is_f.
+        
+        px := x + /col_to_px/col.
+        /text_char/px/y/size/SYN_NUMBER_R/SYN_NUMBER_G/SYN_NUMBER_B/c.
+        col = col + 1.
+    <
+    
+    << col.
+<
+
+#syn_draw_func_def(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    
+    // Draw # character
+    c := /ds_string_at/line/col.
+    px := x + /col_to_px/col.
+    /text_char/px/y/size/SYN_FUNCTION_R/SYN_FUNCTION_G/SYN_FUNCTION_B/c.
+    col = col + 1.
+    
+    // Draw function name (identifier)
+    loop >
+        >> when col ge len.
+        c = /ds_string_at/line/col.
+        >> when not /syn_is_alpha/c and not /syn_is_digit/c.
+        px = x + /col_to_px/col.
+        /text_char/px/y/size/SYN_FUNCTION_R/SYN_FUNCTION_G/SYN_FUNCTION_B/c.
+        col = col + 1.
+    <
+    
+    << col.
+<
+
+#syn_draw_func_call(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    
+    // Check if next char is alpha (function call) or not (division operator)
+    next := 0.
+    next = /ds_string_at/line/(col + 1) when col + 1 lt len.
+    
+    // If not followed by alpha, it's a division operator
+    << /syn_draw_operator_single/line/col/x/y/size when not /syn_is_alpha/next.
+    
+    // Draw / character
+    c := /ds_string_at/line/col.
+    px := x + /col_to_px/col.
+    /text_char/px/y/size/SYN_FUNCTION_R/SYN_FUNCTION_G/SYN_FUNCTION_B/c.
+    col = col + 1.
+    
+    // Draw function name (identifier)
+    loop >
+        >> when col ge len.
+        c = /ds_string_at/line/col.
+        >> when not /syn_is_alpha/c and not /syn_is_digit/c.
+        px = x + /col_to_px/col.
+        /text_char/px/y/size/SYN_FUNCTION_R/SYN_FUNCTION_G/SYN_FUNCTION_B/c.
+        col = col + 1.
+    <
+    
+    << col.
+<
+
+#syn_draw_ident(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    start := col.
+    
+    // Find end of identifier
+    end := col.
+    loop >
+        >> when end ge len.
+        c := /ds_string_at/line/end.
+        >> when not /syn_is_alpha/c and not /syn_is_digit/c.
+        end = end + 1.
+    <
+    
+    // Extract the word
+    word_len := end - start.
+    word := /ds_substring/line/start/word_len.
+    
+    // Check if it's a keyword
+    is_kw := /syn_is_keyword/word.
+    
+    // Draw each character
+    loop >
+        >> when col ge end.
+        c := /ds_string_at/line/col.
+        px := x + /col_to_px/col.
+        /text_char/px/y/size/SYN_KEYWORD_R/SYN_KEYWORD_G/SYN_KEYWORD_B/c when is_kw == 1.
+        /text_char/px/y/size/ED_TEXT_R/ED_TEXT_G/ED_TEXT_B/c when is_kw == 0.
+        col = col + 1.
+    <
+    
+    << col.
+<
+
+#syn_draw_scope(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    c := /ds_string_at/line/col.
+    
+    // Check for << or >> or ><
+    next := 0.
+    next = /ds_string_at/line/(col + 1) when col + 1 lt len.
+    
+    px := x + /col_to_px/col.
+    px2 := x + /col_to_px/(col + 1).
+    
+    // << (return)
+    is_return := (c == 60 and next == 60).
+    /text_char/px/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/c when is_return.
+    /text_char/px2/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/next when is_return.
+    << col + 2 when is_return.
+    
+    // >> (break)
+    is_break := (c == 62 and next == 62).
+    /text_char/px/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/c when is_break.
+    /text_char/px2/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/next when is_break.
+    << col + 2 when is_break.
+    
+    // >< (continue)
+    is_continue := (c == 62 and next == 60).
+    /text_char/px/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/c when is_continue.
+    /text_char/px2/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/next when is_continue.
+    << col + 2 when is_continue.
+    
+    // Single > or <
+    /text_char/px/y/size/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/c.
+    << col + 1.
+<
+
+#syn_draw_operator(line, col, x, y, size) >
+    len := /ds_strlen/line.
+    c := /ds_string_at/line/col.
+    
+    // Check for multi-char operators: := == != => ->
+    next := 0.
+    next = /ds_string_at/line/(col + 1) when col + 1 lt len.
+    
+    px := x + /col_to_px/col.
+    px2 := x + /col_to_px/(col + 1).
+    
+    // := (assign)
+    is_decl := (c == 58 and next == 61).
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c when is_decl.
+    /text_char/px2/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/next when is_decl.
+    << col + 2 when is_decl.
+    
+    // == (equal)
+    is_eq := (c == 61 and next == 61).
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c when is_eq.
+    /text_char/px2/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/next when is_eq.
+    << col + 2 when is_eq.
+    
+    // != (not equal)
+    is_neq := (c == 33 and next == 61).
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c when is_neq.
+    /text_char/px2/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/next when is_neq.
+    << col + 2 when is_neq.
+    
+    // => (arrow)
+    is_arrow := (c == 61 and next == 62).
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c when is_arrow.
+    /text_char/px2/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/next when is_arrow.
+    << col + 2 when is_arrow.
+    
+    // -> (prop access)
+    is_prop := (c == 45 and next == 62).
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c when is_prop.
+    /text_char/px2/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/next when is_prop.
+    << col + 2 when is_prop.
+    
+    // Single operator character
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c.
+    << col + 1.
+<
+
+#syn_draw_operator_single(line, col, x, y, size) >
+    c := /ds_string_at/line/col.
+    px := x + /col_to_px/col.
+    /text_char/px/y/size/SYN_OPERATOR_R/SYN_OPERATOR_G/SYN_OPERATOR_B/c.
+    << col + 1.
+<
+
+#syn_draw_punct(line, col, x, y, size) >
+    c := /ds_string_at/line/col.
+    px := x + /col_to_px/col.
+    /text_char/px/y/size/SYN_PUNCT_R/SYN_PUNCT_G/SYN_PUNCT_B/c.
+    << col + 1.
 <
 
 // ============================================================================
@@ -568,6 +1012,22 @@ ED_SCROLLBAR_THUMB_B := 110.
     left := /ds_substring/line/0/editor_cursor_col.
     right := /ds_substring/line/editor_cursor_col/(len - editor_cursor_col).
     
+    // Smart auto-indent: get current line's indentation
+    indent := /get_line_indent/line.
+    
+    // Check if line ends with > (scope in) - add one indent level
+    ends_with_scope := /line_ends_with_scope_in/left.
+    indent = indent + 4 when ends_with_scope == 1.
+    
+    // Create indent string
+    indent_str := /make_indent_string/indent.
+    
+    // Strip leading whitespace from right part (we'll add new indent)
+    right_stripped := /strip_leading_whitespace/right.
+    
+    // Prepend indent to the new line
+    new_right := /ds_string_concat/indent_str/right_stripped.
+    
     i := editor_num_lines.
     loop when i gt editor_cursor_line + 1 >
         editor_lines[i] = editor_lines[i - 1].
@@ -575,14 +1035,285 @@ ED_SCROLLBAR_THUMB_B := 110.
     <
     
     editor_lines[editor_cursor_line] = left.
-    editor_lines[editor_cursor_line + 1] = right.
+    editor_lines[editor_cursor_line + 1] = new_right.
     
     editor_num_lines = editor_num_lines + 1.
     editor_cursor_line = editor_cursor_line + 1.
-    editor_cursor_col = 0.
+    editor_cursor_col = indent.
     /reset_blink/.
     /editor_adjust_scroll/.
     /bot_notify_code_changed/.
+<
+
+// ============================================================================
+// Smart Auto-Indent Helpers
+// ============================================================================
+
+#get_line_indent(line) >
+    len := /ds_strlen/line.
+    indent := 0.
+    
+    loop >
+        >> when indent ge len.
+        c := /ds_string_at/line/indent.
+        >> when c != 32 and c != 9. // not space or tab
+        indent = indent + 1 when c == 32. // space
+        indent = indent + 4 when c == 9.  // tab counts as 4
+    <
+    
+    << indent.
+<
+
+#line_ends_with_scope_in(line) >
+    len := /ds_strlen/line.
+    << 0 when len == 0.
+    
+    // Find last non-whitespace character (ignoring comments)
+    i := len - 1.
+    in_comment := 0.
+    
+    // First, check for trailing comment and find where it starts
+    comment_start := len.
+    j := 0.
+    loop >
+        >> when j ge len - 1.
+        c := /ds_string_at/line/j.
+        next := /ds_string_at/line/(j + 1).
+        comment_start = j when c == 47 and next == 47. // //
+        >> when c == 47 and next == 47.
+        j = j + 1.
+    <
+    
+    // Now find last non-whitespace before comment
+    i = comment_start - 1.
+    loop >
+        >> when i lt 0.
+        c := /ds_string_at/line/i.
+        >> when c != 32 and c != 9.
+        i = i - 1.
+    <
+    
+    << 0 when i lt 0.
+    
+    last_char := /ds_string_at/line/i.
+    << 1 when last_char == 62. // >
+    << 0.
+<
+
+#make_indent_string(count) >
+    << "" when count le 0.
+    
+    result := "".
+    i := 0.
+    loop >
+        >> when i ge count.
+        result = /ds_string_concat/result/" ".
+        i = i + 1.
+    <
+    
+    << result.
+<
+
+#strip_leading_whitespace(line) >
+    len := /ds_strlen/line.
+    << "" when len == 0.
+    
+    i := 0.
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/line/i.
+        >> when c != 32 and c != 9.
+        i = i + 1.
+    <
+    
+    << "" when i ge len.
+    << /ds_substring/line/i/(len - i).
+<
+
+// ============================================================================
+// Code Folding
+// ============================================================================
+
+// Check if a line is a fold header (ends with > but not >> or ><)
+#is_fold_header(line_idx) >
+    << 0 when line_idx ge editor_num_lines.
+    line := editor_lines[line_idx].
+    result := /line_ends_with_scope_in/line.
+    << result.
+<
+
+// Find the matching < for a fold header starting at line_idx
+// Returns the line index of the matching <, or -1 if not found
+#find_fold_end(start_line) >
+    << -1 when start_line ge editor_num_lines.
+    
+    depth := 1.
+    i := start_line + 1.
+    
+    loop >
+        >> when i ge editor_num_lines.
+        >> when depth == 0.
+        
+        line := editor_lines[i].
+        delta := /count_scope_delta/line.
+        depth = depth + delta.
+        
+        << i when depth == 0.
+        i = i + 1.
+    <
+    
+    << -1.
+<
+
+// Count the net scope change of a line (+1 for each >, -1 for each <)
+// Ignores >> << >< and characters inside strings/comments
+#count_scope_delta(line) >
+    len := /ds_strlen/line.
+    << 0 when len == 0.
+    
+    delta := 0.
+    i := 0.
+    in_string := 0.
+    
+    loop >
+        >> when i ge len.
+        c := /ds_string_at/line/i.
+        
+        // Skip strings
+        in_string = 1 - in_string when c == 34.
+        i = i + 1 when in_string == 1.
+        >< when in_string == 1.
+        
+        // Skip comments (// to end of line)
+        next := 0.
+        next = /ds_string_at/line/(i + 1) when i + 1 lt len.
+        << delta when c == 47 and next == 47.
+        
+        // Get previous char
+        prev := 0.
+        prev = /ds_string_at/line/(i - 1) when i gt 0.
+        
+        // Check for multi-char tokens to skip: << >> >< => ->
+        is_double := 0.
+        is_double = 1 when c == 60 and next == 60.  // <<
+        is_double = 1 when c == 62 and next == 62.  // >>
+        is_double = 1 when c == 62 and next == 60.  // ><
+        is_double = 1 when c == 61 and next == 62.  // =>
+        is_double = 1 when c == 45 and next == 62.  // -> (member access)
+        i = i + 2 when is_double == 1.
+        >< when is_double == 1.
+        
+        // Skip > if preceded by = or - (arrow operators)
+        is_arrow := (prev == 61 and c == 62).  // =>
+        is_arrow = 1 when prev == 45 and c == 62.  // ->
+        i = i + 1 when is_arrow == 1.
+        >< when is_arrow == 1.
+        
+        // Count single > and <
+        delta = delta + 1 when c == 62.
+        delta = delta - 1 when c == 60.
+        
+        i = i + 1.
+    <
+    
+    << delta.
+<
+
+// Toggle fold at the given line
+#toggle_fold(line_idx) >
+    << 0 when not /is_fold_header/line_idx.
+    
+    current := fold_state[line_idx].
+    fold_state[line_idx] = 1 - current.
+<
+
+// Check if a line is hidden (inside a collapsed fold)
+#is_line_folded(line_idx) >
+    << 0 when line_idx == 0.
+    
+    // Check all lines above to see if we're inside a collapsed fold
+    i := 0.
+    loop >
+        >> when i ge line_idx.
+        
+        // Is this line a collapsed fold header?
+        is_collapsed := fold_state[i].
+        << 0 when is_collapsed == 0.
+        << 0 when i ge line_idx.
+        
+        // Find where this fold ends
+        fold_end := /find_fold_end/i.
+        
+        // If line_idx is within this fold and it's collapsed, it's hidden
+        << 1 when fold_end ge line_idx and is_collapsed == 1.
+        
+        // Skip to after this fold if it's collapsed
+        i = fold_end when is_collapsed == 1 and fold_end gt i.
+        i = i + 1.
+    <
+    
+    << 0.
+<
+
+// Get the display line index for a given actual line (accounts for folding)
+// Returns -1 if the line is hidden
+#get_display_line(actual_line) >
+    << -1 when /is_line_folded/actual_line.
+    
+    display := 0.
+    i := 0.
+    
+    loop >
+        >> when i ge actual_line.
+        
+        // Skip hidden lines
+        is_hidden := /is_line_folded/i.
+        display = display + 1 when is_hidden == 0.
+        
+        i = i + 1.
+    <
+    
+    << display.
+<
+
+// Get the actual line index for a given display line (accounts for folding)
+#get_actual_line(display_line) >
+    display := 0.
+    actual := 0.
+    
+    loop >
+        >> when display gt display_line.
+        >> when actual ge editor_num_lines.
+        
+        is_hidden := /is_line_folded/actual.
+        display = display + 1 when is_hidden == 0.
+        
+        << actual when display == display_line + 1 and is_hidden == 0.
+        
+        actual = actual + 1.
+    <
+    
+    << actual.
+<
+
+// Count visible lines (for scrollbar calculation)
+#count_visible_lines() >
+    count := 0.
+    i := 0.
+    
+    loop >
+        >> when i ge editor_num_lines.
+        is_hidden := /is_line_folded/i.
+        count = count + 1 when is_hidden == 0.
+        i = i + 1.
+    <
+    
+    << count.
+<
+
+// Handle click on fold gutter
+#handle_fold_click(line_idx) >
+    /toggle_fold/line_idx when /is_fold_header/line_idx.
 <
 
 #editor_insert_tab() >
@@ -810,9 +1541,21 @@ ED_SCROLLBAR_THUMB_B := 110.
     
     // Calculate clicked position
     rel_y := my - content_y.
-    clicked_line := editor_scroll_y + rel_y / EDITOR_LINE_HEIGHT.
+    display_row := rel_y / EDITOR_LINE_HEIGHT.
+    
+    // Map display row to actual line (accounting for folds)
+    clicked_line := /display_row_to_actual_line/(editor_scroll_y + display_row).
     clicked_line = 0 when clicked_line lt 0.
     clicked_line = editor_num_lines - 1 when clicked_line ge editor_num_lines.
+    
+    // Check if click is in fold gutter area (wider hitbox around the fold indicator)
+    // Fold indicator is drawn at editor_x + 25, so make hitbox from editor_x + 15 to editor_x + 40
+    fold_gutter_left := editor_x + 15.
+    fold_gutter_right := editor_x + 45.
+    on_fold_gutter := (mx ge fold_gutter_left and mx lt fold_gutter_right).
+    
+    // Toggle fold if clicking on fold gutter and line is a fold header
+    << /handle_fold_gutter_click/clicked_line when on_fold_gutter == 1.
     
     rel_x := mx - text_x.
     rel_x = 0 when rel_x lt 0.
@@ -833,6 +1576,40 @@ ED_SCROLLBAR_THUMB_B := 110.
     has_selection = 0.
     
     /reset_blink/.
+<
+
+#handle_fold_gutter_click(line_idx) >
+    is_fold := /is_fold_header/line_idx.
+    /toggle_fold/line_idx when is_fold == 1.
+    << 0.
+<
+
+#display_row_to_actual_line(display_row) >
+    // Simple implementation for now: scan through lines
+    // accounting for collapsed folds
+    actual := 0.
+    display := 0.
+    
+    loop >
+        >> when display gt display_row.
+        >> when actual ge editor_num_lines.
+        
+        // Check if this fold is collapsed and skip its contents
+        is_collapsed := fold_state[actual].
+        is_fold := /is_fold_header/actual.
+        
+        << actual when display == display_row.
+        
+        // If collapsed fold, skip to end of fold
+        should_skip := (is_collapsed == 1 and is_fold == 1).
+        fold_end := /find_fold_end/actual.
+        actual = fold_end when should_skip == 1 and fold_end gt actual.
+        
+        display = display + 1.
+        actual = actual + 1.
+    <
+    
+    << actual.
 <
 
 #continue_drag(mx, my) >
@@ -1956,29 +2733,90 @@ ED_SCROLLBAR_THUMB_B := 110.
     visible_lines := (editor_height - 40) / EDITOR_LINE_HEIGHT.
     visible_lines = 1 when visible_lines lt 1.
     
-    for i in 0..visible_lines >
-        line_idx := editor_scroll_y + i.
-        >> when line_idx ge editor_num_lines.
+    // Simple rendering - iterate through visible screen rows
+    for screen_row in 0..visible_lines >
+        // Map screen row to actual line (accounting for scroll and folds)
+        actual_line := /get_actual_line_for_screen_row/(editor_scroll_y + screen_row).
+        >> when actual_line lt 0.
+        >> when actual_line ge editor_num_lines.
         
-        ly := content_y + i * EDITOR_LINE_HEIGHT.
+        ly := content_y + screen_row * EDITOR_LINE_HEIGHT.
+        
+        // Check if this line is a fold header
+        is_fold := /is_fold_header/actual_line.
+        is_collapsed := fold_state[actual_line].
+        
+        // Draw fold indicator (between line number and text)
+        fold_x := editor_x + line_num_width + 2.
+        /draw_fold_indicator/fold_x/ly/is_collapsed when is_fold == 1.
         
         // Execution indicator - highlight line background when bot is running/stepped
-        is_exec_line := (line_idx == bot_current_line).
+        is_exec_line := (actual_line == bot_current_line).
         is_active := (bot_is_running == 1 or bot_is_stepping == 1).
         /draw_exec_indicator/(editor_x)/(ly - 2)/(line_num_width + 5) when is_exec_line == 1 and is_active == 1.
         
         // Line number
         lnx := editor_x + 5.
-        /text_draw_int/lnx/ly/EDITOR_FONT_SIZE/ED_LINENUM_R/ED_LINENUM_G/ED_LINENUM_B/(line_idx + 1).
+        /text_draw_int/lnx/ly/EDITOR_FONT_SIZE/ED_LINENUM_R/ED_LINENUM_G/ED_LINENUM_B/(actual_line + 1).
         
         // Execution arrow marker
         /draw_exec_arrow/(editor_x - 2)/ly when is_exec_line == 1 and is_active == 1.
         
-        // Line content
+        // Line content with syntax highlighting
         tx := editor_x + line_num_width + 10.
-        line_text := editor_lines[line_idx].
-        /text_draw/tx/ly/EDITOR_FONT_SIZE/ED_TEXT_R/ED_TEXT_G/ED_TEXT_B/line_text.
+        line_text := editor_lines[actual_line].
+        /draw_highlighted_line/line_text/tx/ly/EDITOR_FONT_SIZE.
+        
+        // Draw fold ellipsis if collapsed
+        /draw_fold_ellipsis/tx/ly/line_text when is_collapsed == 1.
     <
+<
+
+// Map a display row (0-indexed from top of visible area) to actual line index
+// This accounts for collapsed folds
+#get_actual_line_for_screen_row(display_row) >
+    << -1 when display_row lt 0.
+    
+    actual := 0.
+    display := 0.
+    
+    loop >
+        >> when display gt display_row.
+        >> when actual ge editor_num_lines.
+        
+        << actual when display == display_row.
+        
+        // Check if this fold is collapsed - if so, skip to end
+        is_collapsed := fold_state[actual].
+        is_fold := /is_fold_header/actual.
+        
+        // Move to next display row
+        display = display + 1.
+        
+        // If this is a collapsed fold, skip its contents
+        should_skip := (is_collapsed == 1 and is_fold == 1).
+        fold_end := actual. // Default: don't skip
+        fold_end = /find_fold_end/actual when should_skip == 1.
+        actual = fold_end when should_skip == 1 and fold_end gt actual.
+        
+        actual = actual + 1.
+    <
+    
+    << -1.
+<
+
+#draw_fold_indicator(x, y, is_collapsed) >
+    // Draw fold indicator at fixed position after line numbers
+    ind_x := editor_x + 25.
+    /text_draw/ind_x/y/EDITOR_FONT_SIZE/SYN_SCOPE_R/SYN_SCOPE_G/SYN_SCOPE_B/">" when is_collapsed == 1.
+    /text_draw/ind_x/y/EDITOR_FONT_SIZE/SYN_COMMENT_R/SYN_COMMENT_G/SYN_COMMENT_B/"v" when is_collapsed == 0.
+<
+
+#draw_fold_ellipsis(x, y, line) >
+    // Draw "..." after the line to indicate folded content
+    len := /ds_strlen/line.
+    ellipsis_x := x + /col_to_px/len + 10.
+    /text_draw/ellipsis_x/y/EDITOR_FONT_SIZE/ED_COMMENT_R/ED_COMMENT_G/ED_COMMENT_B/"...".
 <
 
 #draw_exec_indicator(x, y, w) >
