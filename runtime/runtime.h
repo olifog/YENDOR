@@ -45,6 +45,15 @@ void gc_clear_array(Value *array, Value size_val);
 // Check if value is a string (vs integer)
 Value ds_is_string(Value v);
 
+// Convert integer to string
+Value ds_int_to_string(Value int_val);
+
+// Convert object to string (JSON-like)
+Value ds_object_to_string(Value obj_val);
+
+// Convert any value to string (JSON-like, auto-detect list/obj)
+Value ds_val_to_string(Value val);
+
 // ============================================================================
 // Platform Detection
 // ============================================================================
@@ -481,5 +490,8 @@ Value ds_list_create(void);
 Value ds_list_push(Value list, Value value);
 Value ds_list_get(Value list, Value index);
 Value ds_list_len(Value list);
+Value ds_is_list(Value val);
+Value ds_list_to_string(Value list);
+Value ds_json_encode(Value val);
 
 #endif // RUNTIME_H

@@ -231,7 +231,7 @@ bot_message := "".
 #bot_pause() >
     // Pause execution but keep all state intact
     bot_is_running = 0.
-    bot_message = "Paused.".
+    bot_message = "Program paused.".
 <
 
 #bot_resume() >
@@ -508,11 +508,9 @@ bot_message := "".
 <
 
 #bot_finished_message() >
-    bot_is_running = 0.
-    bot_is_stepping = 0.
-    bot_current_line = 0 - 1.
-    // Reset message
-    bot_message = "Program Complete.".
+    // Program completed - fully stop execution
+    /bot_stop/.
+    bot_message = "Program complete.".
     << 0.
 <
 

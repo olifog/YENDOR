@@ -83,7 +83,8 @@ lex_line := 0.
     
     loop >
         c := /ds_string_at/str/i.
-        >> when i ge len or not (/is_alpha/c).
+        // Allow letters, underscore, and digits (after first char)
+        >> when i ge len or not (/is_alpha/c or /is_digit/c).
         i = i + 1.
     <
     
