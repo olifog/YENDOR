@@ -324,8 +324,10 @@ restart_btn_hovered := 0.
     /text_draw/(x + 26)/(y)/14/txt_r/txt_g/txt_b/"RESTART".
     
     // Handle click
+    // Handle click
     just_pressed := /input_mouse_just_pressed/.
     /full_restart/ when just_pressed == 1 and restart_btn_hovered == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when just_pressed == 1 and restart_btn_hovered == 1.
 <
 
 #full_restart() >
@@ -546,8 +548,10 @@ death_btn_hovered := 0.
     /text_draw/(x + 38)/(y + 8)/14/txt_r/txt_g/txt_b/"RESTART".
     
     // Handle click - restart creates NEW dungeon
+    // Handle click - restart creates NEW dungeon
     just_pressed := /input_mouse_just_pressed/.
     /full_restart/ when just_pressed == 1 and death_btn_hovered == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when just_pressed == 1 and death_btn_hovered == 1.
 <
 
 // Death screen retry button (same dungeon)
@@ -600,8 +604,10 @@ retry_btn_hovered := 0.
     /text_draw/(x + 38)/(y + 8)/14/txt_r/txt_g/txt_b/"RETRY".
     
     // Handle click - retry keeps SAME dungeon
+    // Handle click - retry keeps SAME dungeon
     just_pressed := /input_mouse_just_pressed/.
     /do_retry/ when just_pressed == 1 and retry_btn_hovered == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when just_pressed == 1 and retry_btn_hovered == 1.
 <
 
 #do_retry() >

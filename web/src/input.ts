@@ -1,4 +1,5 @@
 import type { WasmModule } from './types'
+import { audioManager, SoundType } from './audio'
 
 // Extended key map for text editing
 const keyMap: Record<string, number> = {
@@ -82,6 +83,7 @@ export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void
 
     const key = keyMap[e.code]
     if (key !== undefined && wasmModule) {
+      audioManager.play(SoundType.KEY_TYPE)
       wasmModule._on_key_down(tagInt(key))
       e.preventDefault()
     }

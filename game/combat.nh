@@ -106,6 +106,9 @@
     
     did_hit := /check_hit/roll/mon_ac/player_xp_level/hit_bonus.
     
+    // Sound
+    /play_sound_wrapper/SOUND_ATTACK.
+    
     mon_name := "monster".
     mon_name = "kobold" when mon_type == ENTITY_KOBOLD.
     mon_name = "goblin" when mon_type == ENTITY_GOBLIN.
@@ -156,7 +159,9 @@
     // Deactivate if dead
     // entity_active[entity_idx] = 0 when killed == 1.
     // Use dying state for visual fade out
+    // Use dying state for visual fade out
     entity_is_dying[entity_idx] = 1 when killed == 1.
+    /play_sound_wrapper/SOUND_DIE when killed == 1.
     entity_hit_flash[entity_idx] = 20 when killed == 1. // Long flash for death
     
     // Add XP?
@@ -207,8 +212,10 @@
     player_hp = player_hp - dmg.
     
     // Visual Polish: Player Hit Flash
+    // Visual Polish: Player Hit Flash
     player_hit_flash = 10 when did_hit == 1.
     /spawn_blood_particles/player_x/player_y when did_hit == 1.
+    /play_sound_wrapper/SOUND_HIT_RECEIVED when did_hit == 1.
     
     // 4. Message
     msg := /ds_string_concat/name_cap/" misses.".

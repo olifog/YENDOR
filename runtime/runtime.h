@@ -371,16 +371,16 @@ void text_draw_font(Value x, Value y, Value size, Value r, Value g, Value b,
                     Value font_id, Value text_val);
 
 // Draw text right-aligned to x position (text ends at x)
-void text_draw_font_right(Value x, Value y, Value size, Value r, Value g, Value b,
-                          Value font_id, Value text_val);
+void text_draw_font_right(Value x, Value y, Value size, Value r, Value g,
+                          Value b, Value font_id, Value text_val);
 
 // Draw a filled rectangle
 void draw_rect(Value x, Value y, Value w, Value h, Value r, Value g, Value b,
                Value a);
 
 // Draw a line segment (for signature drawing)
-void draw_line(Value x1, Value y1, Value x2, Value y2, Value width,
-               Value r, Value g, Value b, Value a);
+void draw_line(Value x1, Value y1, Value x2, Value y2, Value width, Value r,
+               Value g, Value b, Value a);
 
 // ============================================================================
 // Math Helpers (since .nh has limited math)
@@ -493,5 +493,10 @@ Value ds_list_len(Value list);
 Value ds_is_list(Value val);
 Value ds_list_to_string(Value list);
 Value ds_json_encode(Value val);
+
+// ============================================================================
+// Audio
+// ============================================================================
+void play_sound(Value id);
 
 #endif // RUNTIME_H

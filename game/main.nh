@@ -2,6 +2,7 @@
 // The player writes code to control the @ character
 
 @use "intro.nh".
+@use "audio.nh".
 @use "bgshader.nh".
 @use "editor.nh".
 @use "player.nh".

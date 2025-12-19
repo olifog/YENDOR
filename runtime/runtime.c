@@ -1705,7 +1705,8 @@ void text_draw_int(Value x, Value y, Value size, Value r, Value g, Value b,
 }
 
 // Draw text with a custom font (for intro/special screens)
-// font_id: 0 = serif (Times/Georgia), 1 = handwriting (cursive), 2 = typewriter (Courier)
+// font_id: 0 = serif (Times/Georgia), 1 = handwriting (cursive), 2 = typewriter
+// (Courier)
 void text_draw_font(Value x, Value y, Value size, Value r, Value g, Value b,
                     Value font_id, Value text_val) {
   const char *text = (const char *)AS_OBJ(text_val);
@@ -1717,10 +1718,17 @@ void text_draw_font(Value x, Value y, Value size, Value r, Value g, Value b,
         if (window.textCtx) {
           var fontFamily;
           switch ($6) {
-            case 0: fontFamily = 'Georgia, "Times New Roman", serif'; break;
-            case 1: fontFamily = '"Brush Script MT", "Segoe Script", cursive'; break;
-            case 2: fontFamily = '"Courier New", Courier, monospace'; break;
-            default: fontFamily = 'Georgia, serif';
+          case 0:
+            fontFamily = 'Georgia, "Times New Roman", serif';
+            break;
+          case 1:
+            fontFamily = '"Brush Script MT", "Segoe Script", cursive';
+            break;
+          case 2:
+            fontFamily = '"Courier New", Courier, monospace';
+            break;
+          default:
+            fontFamily = 'Georgia, serif';
           }
           window.textCtx.font = $7 + 'px ' + fontFamily;
           window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
@@ -1735,8 +1743,8 @@ void text_draw_font(Value x, Value y, Value size, Value r, Value g, Value b,
 #endif
 }
 
-void text_draw_font_right(Value x, Value y, Value size, Value r, Value g, Value b,
-                          Value font_id, Value text_val) {
+void text_draw_font_right(Value x, Value y, Value size, Value r, Value g,
+                          Value b, Value font_id, Value text_val) {
   const char *text = (const char *)AS_OBJ(text_val);
   int font = (int)AS_INT(font_id);
   int sz = (int)AS_INT(size);
@@ -1746,10 +1754,17 @@ void text_draw_font_right(Value x, Value y, Value size, Value r, Value g, Value 
         if (window.textCtx) {
           var fontFamily;
           switch ($6) {
-            case 0: fontFamily = 'Georgia, "Times New Roman", serif'; break;
-            case 1: fontFamily = '"Brush Script MT", "Segoe Script", cursive'; break;
-            case 2: fontFamily = '"Courier New", Courier, monospace'; break;
-            default: fontFamily = 'Georgia, serif';
+          case 0:
+            fontFamily = 'Georgia, "Times New Roman", serif';
+            break;
+          case 1:
+            fontFamily = '"Brush Script MT", "Segoe Script", cursive';
+            break;
+          case 2:
+            fontFamily = '"Courier New", Courier, monospace';
+            break;
+          default:
+            fontFamily = 'Georgia, serif';
           }
           window.textCtx.font = $7 + 'px ' + fontFamily;
           window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
@@ -1792,8 +1807,8 @@ void draw_rect(Value x, Value y, Value w, Value h, Value r, Value g, Value b,
 }
 
 // Draw a line segment (for signature drawing)
-void draw_line(Value x1, Value y1, Value x2, Value y2, Value width, 
-               Value r, Value g, Value b, Value a) {
+void draw_line(Value x1, Value y1, Value x2, Value y2, Value width, Value r,
+               Value g, Value b, Value a) {
 #ifdef __EMSCRIPTEN__
   EM_ASM(
       {
@@ -1809,8 +1824,8 @@ void draw_line(Value x1, Value y1, Value x2, Value y2, Value width,
           window.textCtx.stroke();
         }
       },
-      AS_INT(x1), AS_INT(y1), AS_INT(x2), AS_INT(y2), AS_INT(width),
-      AS_INT(r), AS_INT(g), AS_INT(b), AS_INT(a));
+      AS_INT(x1), AS_INT(y1), AS_INT(x2), AS_INT(y2), AS_INT(width), AS_INT(r),
+      AS_INT(g), AS_INT(b), AS_INT(a));
 #else
   (void)x1;
   (void)y1;
@@ -1916,4 +1931,22 @@ void on_frame_start(void) {
   // GC collection is now safe because __gc_register_roots() registers
   // all global arrays and string variables as roots at game_init
   gc_maybe_collect();
+}
+
+// ============================================================================
+// Audio
+// ============================================================================
+
+void play_sound(Value id_val) {
+  int id = (int)AS_INT(id_val);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.playGameSound)
+          window.playGameSound($0);
+      },
+      id);
+#else
+  (void)id;
+#endif
 }

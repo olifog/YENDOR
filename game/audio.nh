@@ -1,0 +1,16 @@
+
+// audio.nh - Audio constants and wrappers
+
+// Sound Types
+SOUND_MOVE := 1.
+SOUND_ATTACK := 2.
+SOUND_HIT_RECEIVED := 3.
+SOUND_DIE := 4.
+SOUND_GOLD := 5.
+SOUND_UI_CLICK := 6.
+SOUND_UI_START := 7.
+SOUND_UI_STOP := 8.
+
+#play_sound_wrapper(id) >
+    /play_sound/id.
+<

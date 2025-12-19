@@ -101,6 +101,7 @@ last_message_buffer := "".
     /append_message/gold_msg when can_move == 1 and tile == TILE_GOLD.
     player_gold = player_gold + /rng_int/4 + 1 when can_move == 1 and tile == TILE_GOLD.
     /spawn_gold_particles/new_x/new_y when can_move == 1 and tile == TILE_GOLD.
+    /play_sound_wrapper/SOUND_GOLD when can_move == 1 and tile == TILE_GOLD.
     /set_tile/new_x/new_y/TILE_FLOOR when can_move == 1 and tile == TILE_GOLD.
     
     // Stairs
@@ -113,6 +114,9 @@ last_message_buffer := "".
     
     player_x = new_x when can_move == 1.
     player_y = new_y when can_move == 1.
+    
+    // Move Sound
+    /play_sound_wrapper/SOUND_MOVE when can_move == 1 and tile != TILE_GOLD.
     
     // Anim
     anim_duration_scaled = ANIM_DURATION / speed_multiplier.

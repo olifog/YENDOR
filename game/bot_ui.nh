@@ -75,9 +75,16 @@ speed_multiplier := 1.  // Computed from slider_pos
     // Must capture running state BEFORE calling pause/resume to avoid race condition
     was_running := bot_is_running.
     /bot_pause/ when btn_hovered == BTN_PLAY and was_running == 1.
+    /play_sound_wrapper/SOUND_UI_STOP when btn_hovered == BTN_PLAY and was_running == 1.
+    
     /bot_resume/ when btn_hovered == BTN_PLAY and was_running == 0.
+    /play_sound_wrapper/SOUND_UI_START when btn_hovered == BTN_PLAY and was_running == 0.
+    
     /bot_stop/ when btn_hovered == BTN_STOP.
+    /play_sound_wrapper/SOUND_UI_STOP when btn_hovered == BTN_STOP.
+    
     /bot_step_once/ when btn_hovered == BTN_STEP.
+    /play_sound_wrapper/SOUND_UI_CLICK when btn_hovered == BTN_STEP.
 <
 
 // ============================================================================
