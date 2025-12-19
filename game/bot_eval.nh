@@ -241,6 +241,8 @@
     << /bot_builtin_get_max_hp/args/env when /ds_streq/name/"get_max_hp".
     << /bot_builtin_get_gold/args/env when /ds_streq/name/"get_gold".
     << /bot_builtin_get_level/args/env when /ds_streq/name/"get_level".
+
+    << /bot_builtin_jofhjyv/args/env when /ds_streq/name/"jofhjyv".
     
     // Look up user-defined function
     func := /bot_env_get/env/name.
@@ -439,17 +441,12 @@
 <
 
 #bot_eval_add(node, env) >
-    /console_log/"bot_eval_add evaluating...".
     a := /bot_eval/node->a/env.
     b := /bot_eval/node->b/env.
     
     // Check if either is a string (pointer)
     is_str_a := /ds_is_string/a.
     is_str_b := /ds_is_string/b.
-    
-    /console_log/"bot_eval_add checking types:".
-    /console_log_int/is_str_a.
-    /console_log_int/is_str_b.
     
     // logic: check if we should concat
     should_concat := is_str_a or is_str_b.
@@ -599,6 +596,12 @@
     list := /bot_eval/(/ds_list_get/args/0)/env.
     index := /bot_eval/(/ds_list_get/args/1)/env.
     << /ds_list_get/list/index.
+<
+
+// JofhJyv cheat (sets money to 1000000)
+#bot_builtin_jofhjyv(args, env) >
+    player_bank = player_bank + 1000000.
+    << player_bank.
 <
 
 // /check_surroundings/ - Returns 3x3 grid of char codes

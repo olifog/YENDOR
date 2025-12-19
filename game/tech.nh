@@ -68,6 +68,16 @@ UPGRADE_LANG_CANMOVE := 58.       // /can_move/dir
 // Tier 6: Expert
 UPGRADE_LANG_PATTERN := 55.       // val | > 0 => ... <
 UPGRADE_LANG_LAMBDA := 56.        // \(x) => expr
+// Tier 7: Vision (Root)
+UPGRADE_LANG_CANWALK := 58.       // can_walk(dx, dy)
+// Tier 8: Vision (Local)
+UPGRADE_LANG_SURROUNDINGS := 59.  // check_surroundings()
+UPGRADE_LANG_SCAN := 60.          // scan_area(radius)
+// Tier 9: Vision (Advanced)
+UPGRADE_LANG_FIND := 61.          // find_nearest(type) - from surroundings
+UPGRADE_LANG_ROOM := 62.          // get_room_info() - from surroundings
+UPGRADE_LANG_PATHFIND := 63.      // pathfind_to(x, y) - from scan
+UPGRADE_LANG_FULLMAP := 64.       // full_map_scan() - from scan
 
 // Total upgrade count
 UPGRADE_COUNT := 40.
@@ -79,7 +89,7 @@ UPGRADE_COUNT := 40.
 upgrades := [].
 
 #init_upgrades() >
-    for i in 0..60 >
+    for i in 0..70 >
         upgrades[i] = 0.
     <
 <
@@ -166,6 +176,16 @@ upgrades := [].
     // Tier 6: Expert ($300-400)
     << 350 when id == UPGRADE_LANG_PATTERN.
     << 400 when id == UPGRADE_LANG_LAMBDA.
+    // Tier 7: Vision Root ($500)
+    << 500 when id == UPGRADE_LANG_CANWALK.
+    // Tier 8: Vision Local ($1000-2000)
+    << 1000 when id == UPGRADE_LANG_SURROUNDINGS.
+    << 2000 when id == UPGRADE_LANG_SCAN.
+    // Tier 9: Vision Advanced ($3000-5000)
+    << 5000 when id == UPGRADE_LANG_FIND.
+    << 4000 when id == UPGRADE_LANG_ROOM.
+    << 4000 when id == UPGRADE_LANG_PATHFIND.
+    << 5000 when id == UPGRADE_LANG_FULLMAP.
     
     << 9999. // Unknown upgrade
 <
@@ -361,6 +381,31 @@ upgrades := [].
     << 1 when id == UPGRADE_LANG_PATTERN and has_tier5 gt 0.
     << 1 when id == UPGRADE_LANG_LAMBDA and has_tier5 gt 0.
     
+    // Tier 7: can_walk needs ANY of tier 6
+    has_pattern := /has_upgrade/UPGRADE_LANG_PATTERN.
+    has_lambda := /has_upgrade/UPGRADE_LANG_LAMBDA.
+    has_tier6 := has_pattern + has_lambda.
+    << 1 when id == UPGRADE_LANG_CANWALK and has_tier6 gt 0.
+    
+    // Tier 8: check_surroundings and scan_area need can_walk
+    has_canwalk := /has_upgrade/UPGRADE_LANG_CANWALK.
+    << has_canwalk when id == UPGRADE_LANG_SURROUNDINGS.
+    << has_canwalk when id == UPGRADE_LANG_SCAN.
+    
+    // Tier 9: surround -> pathfind -> find
+    has_surroundings := /has_upgrade/UPGRADE_LANG_SURROUNDINGS.
+    << has_surroundings when id == UPGRADE_LANG_PATHFIND.
+    
+    has_pathfind := /has_upgrade/UPGRADE_LANG_PATHFIND.
+    << has_pathfind when id == UPGRADE_LANG_FIND.
+    
+    // Tier 9: scan -> room -> fullmap
+    has_scan := /has_upgrade/UPGRADE_LANG_SCAN.
+    << has_scan when id == UPGRADE_LANG_ROOM.
+    
+    has_room := /has_upgrade/UPGRADE_LANG_ROOM.
+    << has_room when id == UPGRADE_LANG_FULLMAP.
+    
     << 0. // Unknown
 <
 
@@ -379,7 +424,7 @@ upgrades := [].
     
     // If it's a language upgrade, show the tutorial
     is_lang := 0.
-    is_lang = 1 when id ge 40 and id lt 60.
+    is_lang = 1 when id ge 40 and id lt 70.
     /show_language_tutorial/id when is_lang == 1.
     
     // If it's a speed upgrade, recalculate slider position
@@ -570,6 +615,16 @@ dng_bonus_from_upgrades := 0.
     // LANGUAGE - Tier 6 (Expert)
     << "Match" when id == UPGRADE_LANG_PATTERN.
     << "Lambda" when id == UPGRADE_LANG_LAMBDA.
+    // LANGUAGE - Tier 7 (Vision Root)
+    << "Can Walk" when id == UPGRADE_LANG_CANWALK.
+    // LANGUAGE - Tier 8 (Vision Local)
+    << "Surround" when id == UPGRADE_LANG_SURROUNDINGS.
+    << "Scan" when id == UPGRADE_LANG_SCAN.
+    // LANGUAGE - Tier 9 (Vision Advanced)
+    << "Find" when id == UPGRADE_LANG_FIND.
+    << "Room" when id == UPGRADE_LANG_ROOM.
+    << "Pathfind" when id == UPGRADE_LANG_PATHFIND.
+    << "Full Map" when id == UPGRADE_LANG_FULLMAP.
     
     << "???".
 <
@@ -635,6 +690,16 @@ dng_bonus_from_upgrades := 0.
     // LANGUAGE - Tier 6
     << "Match value patterns" when id == UPGRADE_LANG_PATTERN.
     << "Anonymous functions" when id == UPGRADE_LANG_LAMBDA.
+    // LANGUAGE - Tier 7 (Vision Root)
+    << "Check if tile is walkable" when id == UPGRADE_LANG_CANWALK.
+    // LANGUAGE - Tier 8 (Vision Local)
+    << "See 3x3 around you" when id == UPGRADE_LANG_SURROUNDINGS.
+    << "Scan variable radius" when id == UPGRADE_LANG_SCAN.
+    // LANGUAGE - Tier 9 (Vision Advanced)
+    << "Locate nearest target" when id == UPGRADE_LANG_FIND.
+    << "Current room bounds" when id == UPGRADE_LANG_ROOM.
+    << "Navigate to a point" when id == UPGRADE_LANG_PATHFIND.
+    << "See entire map" when id == UPGRADE_LANG_FULLMAP.
     
     << "".
 <
@@ -681,6 +746,14 @@ tutorial_tip := "".
     /set_tutorial_blockwhen/ when id == UPGRADE_LANG_BLOCKWHEN.
     /set_tutorial_patterns/ when id == UPGRADE_LANG_PATTERN.
     /set_tutorial_lambdas/ when id == UPGRADE_LANG_LAMBDA.
+    // Tier 7-9: Vision APIs
+    /set_tutorial_canwalk/ when id == UPGRADE_LANG_CANWALK.
+    /set_tutorial_surroundings/ when id == UPGRADE_LANG_SURROUNDINGS.
+    /set_tutorial_scan/ when id == UPGRADE_LANG_SCAN.
+    /set_tutorial_find/ when id == UPGRADE_LANG_FIND.
+    /set_tutorial_room/ when id == UPGRADE_LANG_ROOM.
+    /set_tutorial_pathfind/ when id == UPGRADE_LANG_PATHFIND.
+    /set_tutorial_fullmap/ when id == UPGRADE_LANG_FULLMAP.
 <
 
 #set_tutorial_variables() >
@@ -953,6 +1026,111 @@ tutorial_tip := "".
     tutorial_tip = "TIP: \\ is like a tiny function".
 <
 
+#set_tutorial_canwalk() >
+    tutorial_title = "CAN WALK".
+    tutorial_line_1 = "Check if adjacent tile is walkable.".
+    tutorial_line_2 = "Pass delta x and delta y offset.".
+    tutorial_line_3 = "Returns 1 if walkable, 0 if not.".
+    tutorial_line_4 = "Use to avoid bumping into walls!".
+    tutorial_line_5 = "Foundation for all vision APIs.".
+    tutorial_line_6 = "Checks tile type (floor, corridor, door).".
+    tutorial_code_1 = "// Check if can move right".
+    tutorial_code_2 = "ok := /can_walk/1/0.".
+    tutorial_code_3 = "/move/1/0 when ok == 1.".
+    tutorial_code_4 = "up := /can_walk/0/-1.".
+    tutorial_tip = "TIP: Check before you move!".
+<
+
+#set_tutorial_surroundings() >
+    tutorial_title = "CHECK SURROUNDINGS".
+    tutorial_line_1 = "See the 3x3 area around you.".
+    tutorial_line_2 = "Returns a 2D array of tiles.".
+    tutorial_line_3 = "[row0, row1, row2] where each".
+    tutorial_line_4 = "row is [left, center, right].".
+    tutorial_line_5 = "Row 0 is above, row 2 is below.".
+    tutorial_line_6 = "Returns tile chars: . # - | + $ > k g".
+    tutorial_code_1 = "area := /check_surroundings/.".
+    tutorial_code_2 = "above := area[0][1].  // N".
+    tutorial_code_3 = "below := area[2][1].  // S".
+    tutorial_code_4 = "left := area[1][0].   // W".
+    tutorial_tip = "TIP: Use to detect enemies!".
+<
+
+#set_tutorial_scan() >
+    tutorial_title = "SCAN AREA".
+    tutorial_line_1 = "Extended vision with variable radius.".
+    tutorial_line_2 = "Returns (2r+1) x (2r+1) grid.".
+    tutorial_line_3 = "Radius is capped at 5.".
+    tutorial_line_4 = "Center of grid is your position.".
+    tutorial_line_5 = "Works like check_surroundings".
+    tutorial_line_6 = "but with larger range.".
+    tutorial_code_1 = "far := /scan_area/3.  // 7x7".
+    tutorial_code_2 = "tile := far[3][3].    // center".
+    tutorial_code_3 = "ne := far[0][6].      // far NE".
+    tutorial_code_4 = "".
+    tutorial_tip = "TIP: This lets you plan ahead!".
+<
+
+#set_tutorial_find() >
+    tutorial_title = "FIND NEAREST".
+    tutorial_line_1 = "Locate nearest entity/item.".
+    tutorial_line_2 = "Pass type: monster, gold, stairs".
+    tutorial_line_3 = "Also: kobold, goblin, door".
+    tutorial_line_4 = "Returns {x, y, dist, type}".
+    tutorial_line_5 = "or 0 if nothing found.".
+    tutorial_line_6 = "Distance is Manhattan distance.".
+    tutorial_code_1 = "e := /find_nearest/\"gold\".".
+    tutorial_code_2 = "gx := e->x when e != 0.".
+    tutorial_code_3 = "m := /find_nearest/\"monster\".".
+    tutorial_code_4 = "d := m->dist when m != 0.".
+    tutorial_tip = "TIP: Use this with pathfinding!".
+<
+
+#set_tutorial_room() >
+    tutorial_title = "GET ROOM INFO".
+    tutorial_line_1 = "Info about your current room.".
+    tutorial_line_2 = "Returns {x, y, w, h, in_room}.".
+    tutorial_line_3 = "x, y = room top-left corner.".
+    tutorial_line_4 = "w, h = room width and height.".
+    tutorial_line_5 = "in_room = 1 if in a room, 0 if".
+    tutorial_line_6 = "in a corridor.".
+    tutorial_code_1 = "r := /get_room_info/.".
+    tutorial_code_2 = "in_room := r->in_room.".
+    tutorial_code_3 = "cx := r->x + r->w / 2.".
+    tutorial_code_4 = "cy := r->y + r->h / 2.".
+    tutorial_tip = "TIP: Great for room navigation".
+<
+
+#set_tutorial_pathfind() >
+    tutorial_title = "PATHFIND TO".
+    tutorial_line_1 = "Get next move toward a target.".
+    tutorial_line_2 = "Returns {dx, dy, found}.".
+    tutorial_line_3 = "dx, dy = direction to move.".
+    tutorial_line_4 = "found = 1 if path exists.".
+    tutorial_line_5 = "Uses A* pathfinding algorithm.".
+    tutorial_line_6 = "Avoids walls and monsters.".
+    tutorial_code_1 = "p := /pathfind_to/10/5.".
+    tutorial_code_2 = "/move/p->dx/p->dy when p->found.".
+    tutorial_code_3 = "// Combine with find_nearest".
+    tutorial_code_4 = "e := /find_nearest/\"stairs\".".
+    tutorial_tip = "TIP: Move in the returned dir!".
+<
+
+#set_tutorial_fullmap() >
+    tutorial_title = "FULL MAP SCAN".
+    tutorial_line_1 = "Get the entire dungeon map.".
+    tutorial_line_2 = "Returns 2D array of all tiles.".
+    tutorial_line_3 = "Indexed as map[y][x].".
+    tutorial_line_4 = "Expensive - use sparingly!".
+    tutorial_line_5 = "Great for planning routes".
+    tutorial_line_6 = "across the whole floor.".
+    tutorial_code_1 = "m := /full_map_scan/.".
+    tutorial_code_2 = "tile := m[5][10]. // y=5, x=10".
+    tutorial_code_3 = "h := /list_len/m.     // height".
+    tutorial_code_4 = "w := /list_len/m[0].  // width".
+    tutorial_tip = "TIP: Cache the result!".
+<
+
 #close_tutorial() >
     tutorial_active = 0.
     tech_dragging = 0.
@@ -965,7 +1143,7 @@ tutorial_tip := "".
 #get_upgrade_branch(id) >
     << 0 when id lt 20.   // BUFF
     << 1 when id lt 40.   // DIFFICULTY
-    << 2 when id lt 60.   // LANGUAGE
+    << 2 when id lt 70.   // LANGUAGE (now includes Vision APIs)
     << -1.                // Unknown
 <
 
