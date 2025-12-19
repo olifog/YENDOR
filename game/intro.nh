@@ -1,0 +1,603 @@
+// ============================================================================
+// Intro Cutscene - Job Offer Letter in Envelope
+// ============================================================================
+
+// Intro states
+INTRO_STATE_NONE := 0.          // Intro complete, playing game
+INTRO_STATE_ENVELOPE := 1.      // Envelope waiting to be clicked
+INTRO_STATE_OPENING := 2.       // Envelope opening animation
+INTRO_STATE_LETTER_OUT := 3.    // Letter gliding out to center
+INTRO_STATE_SIGNING := 4.       // Waiting for signature
+INTRO_STATE_FADE_OUT := 5.      // Fading to game
+
+intro_state := 1.               // Start with envelope
+intro_timer := 0.               // Animation timer
+intro_active := 1.              // Is intro currently active?
+
+// Letter/Paper positioning (define first so envelope can match)
+// Letter paper ratio closer to real paper (narrower, taller)
+paper_x := 0.
+paper_y := 0.
+paper_width := 560.
+paper_height := 760.
+
+// Envelope state (width matches letter)
+envelope_x := 0.
+envelope_y := 0.
+envelope_w := 560.
+envelope_h := 140.
+envelope_flap_open := 0.        // 0-100 for flap animation
+envelope_hovered := 0.
+paper_start_y := 0.             // Starting Y (in envelope)
+paper_target_y := 0.            // Target Y (centered)
+paper_anim_progress := 0.       // 0-1000 for smooth animation (using int math)
+
+// Letter content and alignment (0=left, 1=center, 2=right)
+LETTER_NUM_LINES := 35.
+letter_lines := [].
+letter_align := [].
+
+// Signature state
+sig_points_x := [].
+sig_points_y := [].
+sig_breaks := [].
+sig_point_count := 0.
+sig_drawing := 0.
+sig_was_in_box := 0.
+sig_last_x := 0.
+sig_last_y := 0.
+sig_has_drawn := 0.
+
+// Signature box bounds
+sig_box_x := 0.
+sig_box_y := 0.
+sig_box_w := 250.
+sig_box_h := 50.
+
+// Animation timing
+ENVELOPE_OPEN_DURATION := 400.
+LETTER_GLIDE_DURATION := 800.
+
+// Fade state
+fade_alpha := 0.
+
+// ============================================================================
+// Initialization
+// ============================================================================
+
+#init_intro() >
+    intro_state = INTRO_STATE_ENVELOPE.
+    intro_timer = 0.
+    intro_active = 1.
+    
+    // Initialize letter content with alignment (0=left, 1=center, 2=right)
+    // Right-aligned letterhead
+    letter_lines[0] = "HACKNET ENTERPRISES, LTD.".           letter_align[0] = 2.
+    letter_lines[1] = "3720 Langley Boulevard, Suite 404".   letter_align[1] = 2.
+    letter_lines[2] = "Langley, Virginia 22101".             letter_align[2] = 2.
+    letter_lines[3] = "".                                    letter_align[3] = 0.
+    letter_lines[4] = "December 1, 1987".                    letter_align[4] = 2.
+    letter_lines[5] = "".                                    letter_align[5] = 0.
+    
+    // Left-aligned recipient
+    letter_lines[6] = "Mr. Rodney Sinclair".                 letter_align[6] = 0.
+    letter_lines[7] = "1842 Dungeon View Drive".             letter_align[7] = 0.
+    letter_lines[8] = "McLean, Virginia 22102".              letter_align[8] = 0.
+    letter_lines[9] = "".                                    letter_align[9] = 0.
+    
+    // Centered subject
+    letter_lines[10] = "RE: OFFICIAL EMPLOYMENT OFFER".      letter_align[10] = 1.
+    letter_lines[11] = "".                                   letter_align[11] = 0.
+    
+    // Body - left aligned
+    letter_lines[12] = "Dear Mr. Sinclair,".                 letter_align[12] = 0.
+    letter_lines[13] = "".                                   letter_align[13] = 0.
+    letter_lines[14] = "We are pleased to extend to you an offer of employment for".    letter_align[14] = 0.
+    letter_lines[15] = "the position of ENEMY AI ENGINEER.".                            letter_align[15] = 0.
+    letter_lines[16] = "".                                   letter_align[16] = 0.
+    letter_lines[17] = "Your duties shall include writing code to control intelligent". letter_align[17] = 0.
+    letter_lines[18] = "autonomous enemies in our upcoming game, HackNet. You will".    letter_align[18] = 0.
+    letter_lines[19] = "use our internal training tool to develop and test enemy".      letter_align[19] = 0.
+    letter_lines[20] = "behaviors by guiding a bot through procedurally generated".     letter_align[20] = 0.
+    letter_lines[21] = "dungeons. Your bot will become a primary adversary in the".     letter_align[21] = 0.
+    letter_lines[22] = "final release.".                     letter_align[22] = 0.
+    letter_lines[23] = "".                                   letter_align[23] = 0.
+    letter_lines[24] = "Development will be conducted in nh, our modern high-level".    letter_align[24] = 0.
+    letter_lines[25] = "scripting language. We trust you will find it preferable to".   letter_align[25] = 0.
+    letter_lines[26] = "BASIC, Pascal, or FORTRAN.".         letter_align[26] = 0.
+    letter_lines[27] = "".                                   letter_align[27] = 0.
+    
+    // Right-aligned closing
+    letter_lines[28] = "Sincerely,".                         letter_align[28] = 2.
+    letter_lines[29] = "".                                   letter_align[29] = 0.
+    letter_lines[30] = "The Management".                     letter_align[30] = 2.
+    letter_lines[31] = "HackNet Enterprises, Ltd.".          letter_align[31] = 2.
+    letter_lines[32] = "".                                   letter_align[32] = 0.
+    letter_lines[33] = "Please sign below to accept.".       letter_align[33] = 0.
+    letter_lines[34] = "".                                   letter_align[34] = 0.
+    
+    // Clear signature
+    sig_point_count = 0.
+    sig_has_drawn = 0.
+    sig_drawing = 0.
+    sig_was_in_box = 0.
+    
+    envelope_flap_open = 0.
+    
+    // Start paper off-screen (will be positioned when envelope opens)
+    paper_y = SCREEN_H + 100.
+    paper_anim_progress = 0.
+<
+
+// ============================================================================
+// Update
+// ============================================================================
+
+#update_intro(dt) >
+    << 0 when intro_active == 0.
+    
+    // Tell renderer to skip CRT effects
+    /set_skip_crt/1.
+    
+    intro_timer = intro_timer + dt.
+    
+    // Calculate positions
+    envelope_x = (SCREEN_W - envelope_w) / 2.
+    envelope_y = SCREEN_H - envelope_h - 80.
+    paper_x = (SCREEN_W - paper_width) / 2.
+    
+    /update_intro_envelope/dt when intro_state == INTRO_STATE_ENVELOPE.
+    /update_intro_opening/dt when intro_state == INTRO_STATE_OPENING.
+    /update_intro_letter_out/dt when intro_state == INTRO_STATE_LETTER_OUT.
+    /update_intro_signing/dt when intro_state == INTRO_STATE_SIGNING.
+    /update_intro_fade_out/dt when intro_state == INTRO_STATE_FADE_OUT.
+<
+
+#update_intro_envelope(dt) >
+    // Check for hover and click on envelope
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    just_pressed := /input_mouse_just_pressed/.
+    
+    // Check hover
+    in_x := mx ge envelope_x and mx lt envelope_x + envelope_w.
+    in_y := my ge envelope_y and my lt envelope_y + envelope_h.
+    envelope_hovered = in_x * in_y.
+    
+    // Click to open
+    /start_opening/ when just_pressed == 1 and envelope_hovered == 1.
+<
+
+#start_opening() >
+    intro_state = INTRO_STATE_OPENING.
+    intro_timer = 0.
+    
+    // Initialize paper position at envelope (hidden behind it)
+    paper_start_y = envelope_y - 50.
+    paper_y = paper_start_y.
+<
+
+#update_intro_opening(dt) >
+    // Animate envelope flap opening
+    progress := intro_timer / ENVELOPE_OPEN_DURATION.
+    progress = 1 when progress gt 1.
+    
+    // Ease out
+    ease := 1 - (1 - progress) * (1 - progress).
+    envelope_flap_open = ease * 100.
+    
+    // When fully open, start letter coming out
+    /start_letter_out/ when progress ge 1.
+<
+
+#start_letter_out() >
+    intro_state = INTRO_STATE_LETTER_OUT.
+    intro_timer = 0.
+    paper_anim_progress = 0.
+    
+    // Letter starts at envelope position (mostly hidden)
+    paper_start_y = envelope_y - 50.
+    paper_target_y = (SCREEN_H - paper_height) / 2.
+    paper_y = paper_start_y.
+<
+
+#update_intro_letter_out(dt) >
+    // Letter glides from envelope to center
+    // Use integer math: progress goes from 0 to 1000
+    paper_anim_progress = paper_anim_progress + dt * 1000 / LETTER_GLIDE_DURATION.
+    paper_anim_progress = 1000 when paper_anim_progress gt 1000.
+    
+    // Ease out cubic: ease = 1 - (1-t)^3
+    // With t = progress/1000, we compute (1000-progress)^3 / 1000^2
+    inv := 1000 - paper_anim_progress.
+    // (inv/1000)^3 = inv^3 / 1000^3
+    // We want ease = 1 - (inv/1000)^3 = (1000^3 - inv^3) / 1000^3
+    // Simplified: ease_1000 = 1000 - inv*inv*inv / 1000000
+    inv_cubed := inv * inv * inv / 1000000.
+    ease_1000 := 1000 - inv_cubed.
+    
+    // Interpolate: paper_y = start + (target - start) * ease_1000 / 1000
+    delta_y := paper_target_y - paper_start_y.
+    paper_y = paper_start_y + delta_y * ease_1000 / 1000.
+    
+    // Transition to signing when done
+    intro_state = INTRO_STATE_SIGNING when paper_anim_progress ge 1000.
+    intro_timer = 0 when paper_anim_progress ge 1000.
+<
+
+#update_intro_signing(dt) >
+    // Handle signature drawing
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    down := /input_mouse_down/.
+    just_pressed := /input_mouse_just_pressed/.
+    just_released := /input_mouse_just_released/.
+    
+    // Calculate signature box position (on paper, near bottom with more margin)
+    sig_box_x = paper_x + (paper_width - sig_box_w) / 2.
+    sig_box_y = paper_y + paper_height - 70.
+    
+    // Check if mouse is in signature box
+    in_box_x := mx ge sig_box_x and mx lt sig_box_x + sig_box_w.
+    in_box_y := my ge sig_box_y and my lt sig_box_y + sig_box_h.
+    in_box := in_box_x * in_box_y.
+    
+    // Detect re-entry: mouse is held, in box now, but wasn't in box last frame
+    just_entered := in_box * (1 - sig_was_in_box) * down.
+    
+    // Start new stroke when clicking in box OR when re-entering while held
+    /start_sig_stroke/mx/my when just_pressed == 1 and in_box == 1.
+    /start_sig_stroke/mx/my when just_entered == 1 and sig_drawing == 1.
+    
+    // Continue stroke while mouse held and in box
+    /continue_sig_stroke/mx/my when down == 1 and in_box == 1 and sig_drawing == 1.
+    
+    // Set drawing state: we're drawing if mouse is down and in box
+    sig_drawing = 1 when down == 1 and in_box == 1.
+    
+    // End stroke only when mouse is released
+    sig_drawing = 0 when just_released == 1.
+    
+    // Remember if we were in box for next frame
+    sig_was_in_box = in_box.
+    
+    // Check for completion (user has drawn enough)
+    sig_complete := sig_point_count ge 15.
+    
+    // Click anywhere outside box to continue (if signed)
+    can_continue := sig_complete * (1 - in_box).
+    /start_fade_out/ when just_pressed == 1 and can_continue == 1.
+<
+
+#start_sig_stroke(mx, my) >
+    sig_drawing = 1.
+    sig_has_drawn = 1.
+    sig_last_x = mx.
+    sig_last_y = my.
+    
+    idx := sig_point_count.
+    << 0 when idx ge 500.
+    
+    sig_points_x[idx] = mx.
+    sig_points_y[idx] = my.
+    sig_breaks[idx] = 1.
+    sig_point_count = idx + 1.
+<
+
+#continue_sig_stroke(mx, my) >
+    dx := mx - sig_last_x.
+    dy := my - sig_last_y.
+    dist_sq := dx * dx + dy * dy.
+    
+    << 0 when dist_sq lt 4.
+    
+    idx := sig_point_count.
+    << 0 when idx ge 500.
+    
+    sig_points_x[idx] = mx.
+    sig_points_y[idx] = my.
+    sig_breaks[idx] = 0.
+    sig_point_count = idx + 1.
+    
+    sig_last_x = mx.
+    sig_last_y = my.
+<
+
+#start_fade_out() >
+    intro_state = INTRO_STATE_FADE_OUT.
+    intro_timer = 0.
+    fade_alpha = 0.
+<
+
+#update_intro_fade_out(dt) >
+    fade_speed := 400.
+    fade_alpha = fade_alpha + fade_speed * dt / 1000.
+    fade_alpha = 255 when fade_alpha gt 255.
+    
+    /end_intro/ when fade_alpha ge 255.
+<
+
+#end_intro() >
+    intro_active = 0.
+    intro_state = INTRO_STATE_NONE.
+    /set_skip_crt/0.
+<
+
+// ============================================================================
+// Rendering
+// ============================================================================
+
+#render_intro() >
+    << 0 when intro_active == 0.
+    
+    // Clear with cream/off-white background
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/235/225/210/255.
+    
+    // Draw envelope first when just showing envelope (not animating letter out)
+    /draw_envelope/ when intro_state == INTRO_STATE_ENVELOPE.
+    
+    // During letter animation: draw letter, then mask, then envelope on top
+    // This makes the letter appear to emerge from inside the envelope
+    /draw_paper/ when intro_state == INTRO_STATE_OPENING.
+    /draw_paper/ when intro_state == INTRO_STATE_LETTER_OUT.
+    /draw_letter_content/ when intro_state == INTRO_STATE_OPENING.
+    /draw_letter_content/ when intro_state == INTRO_STATE_LETTER_OUT.
+    /draw_envelope_mask/ when intro_state == INTRO_STATE_OPENING.
+    /draw_envelope_mask/ when intro_state == INTRO_STATE_LETTER_OUT.
+    /draw_envelope/ when intro_state == INTRO_STATE_OPENING.
+    /draw_envelope/ when intro_state == INTRO_STATE_LETTER_OUT.
+    
+    // After animation complete: just draw letter normally
+    /draw_paper/ when intro_state == INTRO_STATE_SIGNING.
+    /draw_paper/ when intro_state == INTRO_STATE_FADE_OUT.
+    /draw_letter_content/ when intro_state == INTRO_STATE_SIGNING.
+    /draw_letter_content/ when intro_state == INTRO_STATE_FADE_OUT.
+    
+    // Draw signature area
+    /draw_signature_area/ when intro_state == INTRO_STATE_SIGNING.
+    /draw_signature_area/ when intro_state == INTRO_STATE_FADE_OUT.
+    
+    // Draw signature strokes
+    /draw_signature/.
+    
+    // Draw continue prompt
+    /draw_continue_prompt/ when intro_state == INTRO_STATE_SIGNING and sig_point_count ge 15.
+    
+    // Draw envelope flap on top when opening
+    /draw_envelope_flap/ when intro_state == INTRO_STATE_ENVELOPE.
+    /draw_envelope_flap/ when intro_state == INTRO_STATE_OPENING.
+    
+    // Draw "click to open" hint
+    /draw_envelope_hint/ when intro_state == INTRO_STATE_ENVELOPE.
+    
+    // Draw fade overlay
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/fade_alpha when fade_alpha gt 0.
+<
+
+#draw_envelope_mask() >
+    // Draw background-colored rectangle to mask letter below envelope
+    // This makes it look like the letter is coming out of the envelope
+    mask_y := envelope_y - 5.  // Start just above envelope
+    mask_h := SCREEN_H - mask_y.
+    /draw_rect/0/mask_y/SCREEN_W/mask_h/235/225/210/255.
+<
+
+#draw_envelope() >
+    ex := envelope_x.
+    ey := envelope_y.
+    ew := envelope_w.
+    eh := envelope_h.
+    
+    // Shadow
+    /draw_rect/(ex + 8)/(ey + 8)/ew/eh/0/0/0/50.
+    
+    // Envelope body (tan/kraft paper color)
+    /draw_rect/ex/ey/ew/eh/210/185/140/255.
+    
+    // Darker edges
+    /draw_rect/ex/ey/ew/3/180/155/110/255.
+    /draw_rect/ex/(ey + eh - 3)/ew/3/180/155/110/255.
+    /draw_rect/ex/ey/3/eh/180/155/110/255.
+    /draw_rect/(ex + ew - 3)/ey/3/eh/180/155/110/255.
+    
+    // Inner shadow at top (where letter goes in)
+    /draw_rect/(ex + 15)/(ey + 5)/(ew - 30)/10/190/165/120/180.
+    
+    // Decorative red wax seal centered at bottom
+    seal_w := 44.
+    seal_h := 36.
+    seal_x := ex + (ew - seal_w) / 2.
+    seal_y := ey + eh - 55.
+    /draw_rect/seal_x/seal_y/seal_w/seal_h/140/40/40/255.
+    /draw_rect/(seal_x + 3)/(seal_y + 3)/(seal_w - 6)/(seal_h - 6)/165/55/55/255.
+    /draw_rect/(seal_x + 6)/(seal_y + 6)/(seal_w - 12)/(seal_h - 12)/180/65/65/255.
+    // "H" on seal for HackNet - center it properly
+    h_x := seal_x + seal_w / 2 - 6.
+    h_y := seal_y + 6.
+    /text_draw_font/h_x/h_y/18/240/200/200/0/"H".
+<
+
+#draw_envelope_flap() >
+    ex := envelope_x.
+    ey := envelope_y.
+    ew := envelope_w.
+    
+    // Flap is a triangle that rotates open
+    flap_height := 60.
+    
+    // Calculate flap position based on open amount
+    open := envelope_flap_open.
+    
+    // Flap base color (slightly different from body)
+    fr := 200. fg := 175. fb := 130.
+    
+    // Draw flap as rect that transforms
+    flap_y := ey - flap_height * open / 100.
+    flap_h := flap_height.
+    
+    // Simple representation: draw angled flap
+    /draw_rect/ex/flap_y/ew/flap_h/fr/fg/fb/255 when open lt 50.
+    
+    // When more open, show underside (darker)
+    /draw_rect/ex/(ey - flap_height + 12)/ew/(flap_height - 12)/190/165/120/255 when open ge 50.
+    
+    // Flap edge
+    /draw_rect/ex/flap_y/ew/2/170/145/100/255 when open lt 50.
+<
+
+#draw_envelope_hint() >
+    // "Click to open" text below envelope - center it properly
+    // Text is ~17 chars at ~8px each = ~136px, so offset by half
+    hint_x := envelope_x + (envelope_w - 136) / 2.
+    hint_y := envelope_y + envelope_h + 25.
+    
+    // Pulse effect
+    pulse := intro_timer / 8.
+    pulse_mod := pulse - (pulse / 100) * 100.
+    brightness := 80.
+    brightness = 110 when pulse_mod gt 50.
+    brightness = 140 when envelope_hovered == 1.
+    
+    /text_draw_font/hint_x/hint_y/14/brightness/brightness/brightness/2/"[ Click to open ]".
+<
+
+#draw_paper() >
+    px := paper_x.
+    py := paper_y.
+    pw := paper_width.
+    ph := paper_height.
+    
+    // Shadow
+    /draw_rect/(px + 10)/(py + 10)/pw/ph/0/0/0/80.
+    
+    // Paper background - slightly yellowed like old paper
+    /draw_rect/px/py/pw/ph/252/248/235/255.
+    
+    // Border
+    /draw_rect/px/py/pw/2/200/190/170/255.
+    /draw_rect/px/(py + ph - 2)/pw/2/200/190/170/255.
+    /draw_rect/px/py/2/ph/200/190/170/255.
+    /draw_rect/(px + pw - 2)/py/2/ph/200/190/170/255.
+    
+    // Decorative line under letterhead (after line 5 - after date)
+    header_y := py + 100.
+    /draw_rect/(px + 40)/header_y/(pw - 80)/1/150/140/120/255.
+<
+
+#draw_letter_content() >
+    margin_left := paper_x + 40.
+    margin_right := paper_x + paper_width - 40.
+    base_y := paper_y + 28.
+    line_height := 20.
+    
+    // Typewriter font: font_id = 2 (Courier)
+    font_size := 13.
+    font_id := 2.
+    
+    // Typewriter ink color - dark but slightly faded
+    text_r := 35.
+    text_g := 30.
+    text_b := 40.
+    
+    for i in 0..LETTER_NUM_LINES >
+        line := letter_lines[i].
+        align := letter_align[i].
+        ly := base_y + i * line_height.
+        
+        // Skip if off paper
+        skip := 0.
+        skip = 1 when ly lt paper_y - 10.
+        skip = 1 when ly gt paper_y + paper_height - 90.
+        
+        line_len := /ds_strlen/line.
+        skip = 1 when line_len == 0.
+        
+        << 0 when skip == 1 and i == LETTER_NUM_LINES - 1.
+        >< when skip == 1.
+        
+        // Draw based on alignment
+        // Left-aligned (default)
+        /text_draw_font/margin_left/ly/font_size/text_r/text_g/text_b/font_id/line when align == 0.
+        
+        // Right-aligned - use proper right-align function
+        /text_draw_font_right/margin_right/ly/font_size/text_r/text_g/text_b/font_id/line when align == 2.
+        
+        // Center-aligned - estimate width and center
+        text_width := line_len * 8.
+        center_x := margin_left + (margin_right - margin_left - text_width) / 2.
+        /text_draw_font/center_x/ly/font_size/text_r/text_g/text_b/font_id/line when align == 1.
+    <
+<
+
+#draw_signature_area() >
+    bx := sig_box_x.
+    by := sig_box_y.
+    bw := sig_box_w.
+    bh := sig_box_h.
+    
+    // Signature box background
+    /draw_rect/bx/by/bw/bh/252/248/235/255.
+    
+    // Box border
+    /draw_rect/bx/by/bw/1/120/100/80/255.
+    /draw_rect/bx/(by + bh - 1)/bw/1/120/100/80/255.
+    /draw_rect/bx/by/1/bh/120/100/80/255.
+    /draw_rect/(bx + bw - 1)/by/1/bh/120/100/80/255.
+    
+    // Signature line
+    /draw_rect/(bx + 30)/(by + bh - 15)/(bw - 60)/1/100/90/80/255.
+    
+    // Label - typewriter font
+    label_x := bx.
+    label_y := by - 16.
+    /text_draw_font/label_x/label_y/11/35/30/40/2/"Signature:".
+    
+    // X mark
+    x_mark_x := bx + 8.
+    x_mark_y := by + bh - 28.
+    /text_draw_font/x_mark_x/x_mark_y/12/80/70/60/2/"X" when sig_point_count lt 3.
+<
+
+#draw_signature() >
+    << 0 when sig_point_count lt 2.
+    
+    ink_r := 20.
+    ink_g := 30.
+    ink_b := 80.
+    
+    prev_x := 0.
+    prev_y := 0.
+    
+    for i in 0..sig_point_count >
+        px := sig_points_x[i].
+        py := sig_points_y[i].
+        is_break := sig_breaks[i].
+        
+        /draw_line/prev_x/prev_y/px/py/2/ink_r/ink_g/ink_b/255 when is_break == 0 and i gt 0.
+        
+        prev_x = px.
+        prev_y = py.
+    <
+<
+
+#draw_continue_prompt() >
+    prompt_y := paper_y + paper_height + 20.
+    prompt_x := SCREEN_W / 2 - 130.
+    
+    pulse := intro_timer / 8.
+    pulse_mod := pulse - (pulse / 100) * 100.
+    brightness := 60.
+    brightness = 90 when pulse_mod gt 50.
+    
+    /text_draw_font/prompt_x/prompt_y/14/brightness/brightness/brightness/2/"[ Click anywhere to continue ]".
+<
+
+// ============================================================================
+// Skip intro
+// ============================================================================
+
+#skip_intro() >
+    intro_active = 0.
+    intro_state = INTRO_STATE_NONE.
+    /set_skip_crt/0.
+<

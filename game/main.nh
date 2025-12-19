@@ -1,10 +1,12 @@
 // nh - A NetHack-style Dungeon Crawler with Code Editor
 // The player writes code to control the @ character
 
+@use "intro.nh".
 @use "bgshader.nh".
 @use "editor.nh".
 @use "player.nh".
 @use "entity.nh".
+@use "tech.nh".
 @use "dungeon.nh".
 @use "render.nh".
 @use "particles.nh".
@@ -51,7 +53,7 @@ tech_tree_x := 0.
 tech_tree_y := 0.
 tech_tree_w := 0.
 tech_tree_h := 0.
-TECH_TREE_HEIGHT := 150.  // Fixed height for tech tree placeholder
+TECH_TREE_HEIGHT := 280.  // Height for tech tree panel
 
 // Right pane / Editor bounds
 panel_editor_x := 0.
@@ -139,7 +141,7 @@ LAYOUT_PADDING := 16.
     bottom_half_h := half_height.
     
     // Tech tree has a max width, centered within the shared pane
-    tech_tree_max_w := 380.
+    tech_tree_max_w := 600.
     tech_tree_w = tech_tree_max_w.
     tech_tree_w = shared_pane_w when shared_pane_w lt tech_tree_max_w.
     tech_tree_h = TECH_TREE_HEIGHT.
@@ -180,12 +182,13 @@ LAYOUT_PADDING := 16.
     /rng_seed/seed.
     /init_particles/.
     /init_entities/.
+    /init_upgrades/.
     /init_background_shader/.
     /calculate_layout/.
     /generate_dungeon/.
     
-
     /init_editor/.
+    /init_intro/.
     game_initialized = 1.
     /console_log/"Ready! Write code and click Play to run the bot.".
 <
@@ -195,8 +198,16 @@ LAYOUT_PADDING := 16.
 // ============================================================================
 
 #game_update(dt) >
-    /do_update/dt when game_initialized == 1.
-    /update_particles/ when game_initialized == 1.
+    // Skip if not initialized
+    can_run := game_initialized.
+    
+    // Update intro if active
+    /update_intro/dt when can_run == 1 and intro_active == 1.
+    can_run = 0 when intro_active == 1.
+    
+    // Normal game update
+    /do_update/dt when can_run == 1.
+    /update_particles/ when can_run == 1.
 <
 
 #do_update(dt) >
@@ -221,6 +232,7 @@ LAYOUT_PADDING := 16.
     // Update buttons and slider (must be before editor to intercept clicks)
     /update_slider/.
     /update_buttons/.
+    /update_tech_tree/.
     
     // Update editor (handles all input)
     /editor_update/dt.
@@ -311,7 +323,16 @@ LAYOUT_PADDING := 16.
 // ============================================================================
 
 #game_render() >
-    /do_render/ when game_initialized == 1.
+    // Skip if not initialized
+    can_run := game_initialized.
+    
+    // Render intro if active (no CRT effects)
+    /text_clear/ when can_run == 1 and intro_active == 1.
+    /render_intro/ when can_run == 1 and intro_active == 1.
+    can_run = 0 when intro_active == 1.
+    
+    // Normal game render
+    /do_render/ when can_run == 1.
 <
 
 #do_render() >
@@ -328,7 +349,7 @@ LAYOUT_PADDING := 16.
     /draw_divider/.
     
     // Draw tech tree placeholder (bottom of left pane)
-    /draw_tech_tree_placeholder/.
+    /draw_tech_tree/.
     
     /render_dungeon/.
     /draw_entities/.
@@ -377,54 +398,277 @@ LAYOUT_PADDING := 16.
 <
 
 // ============================================================================
-// Tech Tree Placeholder
+// Tech Tree UI
 // ============================================================================
 
-#draw_tech_tree_placeholder() >
+// Upgrade node dimensions
+UPGRADE_NODE_W := 80.
+UPGRADE_NODE_H := 50.
+UPGRADE_NODE_SPACING_X := 100.
+UPGRADE_NODE_SPACING_Y := 65.
+
+// Hovered upgrade
+tech_hovered_upgrade := -1.
+
+#draw_tech_tree() >
     tx := tech_tree_x.
     ty := tech_tree_y.
     tw := tech_tree_w.
     th := tech_tree_h.
     
     // Background panel
-    /draw_rect/tx/ty/tw/th/25/28/35/220.
+    /draw_rect/tx/ty/tw/th/20/22/28/240.
     
     // Border
-    /draw_rect/tx/ty/tw/2/50/60/75/255.
-    /draw_rect/tx/ty/2/th/50/60/75/255.
-    /draw_rect/tx/(ty + th - 2)/tw/2/50/60/75/255.
-    /draw_rect/(tx + tw - 2)/ty/2/th/50/60/75/255.
+    /draw_rect/tx/ty/tw/2/40/50/65/255.
+    /draw_rect/tx/ty/2/th/40/50/65/255.
+    /draw_rect/tx/(ty + th - 2)/tw/2/40/50/65/255.
+    /draw_rect/(tx + tw - 2)/ty/2/th/40/50/65/255.
     
     // Header
-    hx := tx + 10.
-    hy := ty + 8.
-    /text_draw/hx/hy/12/0/200/200/"[UPGRADES & TECH TREE]".
+    hx := tx + 12.
+    hy := ty + 10.
+    /text_draw/hx/hy/12/200/180/100/"[UPGRADES]".
     
-    // Placeholder content
-    cx := tx + 20.
-    cy := ty + 40.
-    /text_draw/cx/cy/12/100/100/120/"Coming soon...".
+    // Bank display
+    bank_x := tx + tw - 100.
+    /text_draw/bank_x/hy/12/100/200/100/"Bank: $".
+    /text_draw_int/(bank_x + 60)/hy/12/100/200/100/player_bank.
     
-    cy = cy + 24.
-    /text_draw/cx/cy/12/80/80/100/"Unlock abilities by collecting $".
+    // Calculate tree layout starting position
+    tree_x := tx + 20.
+    tree_y := ty + 35.
     
-    // Draw placeholder icons
-    icon_y := ty + th - 40.
-    icon_spacing := 60.
+    // Draw connection lines first (behind nodes)
+    /draw_tech_lines/tree_x/tree_y.
     
-    for i in 0..5 >
-        icon_x := tx + 30 + i * icon_spacing.
-        /draw_placeholder_upgrade_icon/icon_x/icon_y/i.
-    <
+    // Draw upgrade nodes
+    // Row 0: Random Stairs (tier 1 - first unlock)
+    /draw_upgrade_node/(tree_x)/(tree_y)/UPGRADE_STAIRS_RANDOM.
+    
+    // Row 1: Variable Rooms
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X)/(tree_y)/UPGRADE_ROOM_VARIABLE.
+    
+    // Row 2: Second Room (unlocks branches)
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 2)/(tree_y)/UPGRADE_ROOM_2.
+    
+    // Row 3: Branches split here
+    // Room branch (top)
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_3.
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 4)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_4.
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 5)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_5PLUS.
+    
+    // Monster branch (middle)
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y)/UPGRADE_MONSTER_1.
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 4)/(tree_y)/UPGRADE_MONSTER_MORE.
+    
+    // Feature branch (bottom)
+    /draw_upgrade_node/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y + UPGRADE_NODE_SPACING_Y)/UPGRADE_GOLD_SPAWNS.
+    
+    // Draw tooltip for hovered upgrade
+    /draw_upgrade_tooltip/ when tech_hovered_upgrade != -1.
 <
 
-#draw_placeholder_upgrade_icon(x, y, idx) >
-    // Draw a locked upgrade slot
-    /draw_rect/x/y/40/28/35/40/50/255.
-    /draw_rect/(x + 1)/(y + 1)/38/26/45/50/60/255.
+#draw_tech_lines(tree_x, tree_y) >
+    // Draw connection lines between nodes
+    // Line color
+    lr := 50. lg := 60. lb := 80.
     
-    // Lock symbol or question mark
-    sx := x + 15.
-    sy := y + 6.
-    /text_draw/sx/sy/12/80/80/100/"?".
+    // Stairs -> Variable
+    x1 := tree_x + UPGRADE_NODE_W.
+    y1 := tree_y + UPGRADE_NODE_H / 2.
+    x2 := tree_x + UPGRADE_NODE_SPACING_X.
+    y2 := y1.
+    /draw_rect/x1/y1/20/2/lr/lg/lb/255.
+    
+    // Variable -> Room2
+    x1 = tree_x + UPGRADE_NODE_SPACING_X + UPGRADE_NODE_W.
+    x2 = tree_x + UPGRADE_NODE_SPACING_X * 2.
+    /draw_rect/x1/y1/20/2/lr/lg/lb/255.
+    
+    // Room2 -> Branches (vertical connector)
+    x1 = tree_x + UPGRADE_NODE_SPACING_X * 2 + UPGRADE_NODE_W.
+    y1 = tree_y + UPGRADE_NODE_H / 2.
+    /draw_rect/x1/y1/10/2/lr/lg/lb/255.
+    
+    // Vertical line for branches
+    vx := tree_x + UPGRADE_NODE_SPACING_X * 2 + UPGRADE_NODE_W + 10.
+    vy_top := tree_y - UPGRADE_NODE_SPACING_Y + UPGRADE_NODE_H / 2.
+    vy_bot := tree_y + UPGRADE_NODE_SPACING_Y + UPGRADE_NODE_H / 2.
+    vh := vy_bot - vy_top.
+    /draw_rect/vx/vy_top/2/vh/lr/lg/lb/255.
+    
+    // Horizontal lines to each branch
+    // Top (rooms)
+    /draw_rect/vx/(tree_y - UPGRADE_NODE_SPACING_Y + UPGRADE_NODE_H / 2)/8/2/lr/lg/lb/255.
+    // Middle (monsters)
+    /draw_rect/vx/(tree_y + UPGRADE_NODE_H / 2)/8/2/lr/lg/lb/255.
+    // Bottom (features)
+    /draw_rect/vx/(tree_y + UPGRADE_NODE_SPACING_Y + UPGRADE_NODE_H / 2)/8/2/lr/lg/lb/255.
+    
+    // Room chain: Room3 -> Room4 -> Room5+
+    x1 = tree_x + UPGRADE_NODE_SPACING_X * 3 + UPGRADE_NODE_W.
+    y1 = tree_y - UPGRADE_NODE_SPACING_Y + UPGRADE_NODE_H / 2.
+    /draw_rect/x1/y1/20/2/lr/lg/lb/255.
+    
+    x1 = tree_x + UPGRADE_NODE_SPACING_X * 4 + UPGRADE_NODE_W.
+    /draw_rect/x1/y1/20/2/lr/lg/lb/255.
+    
+    // Monster chain: Monster1 -> MonsterMore
+    x1 = tree_x + UPGRADE_NODE_SPACING_X * 3 + UPGRADE_NODE_W.
+    y1 = tree_y + UPGRADE_NODE_H / 2.
+    /draw_rect/x1/y1/20/2/lr/lg/lb/255.
+<
+
+#draw_upgrade_node(x, y, upgrade_id) >
+    // Determine node state
+    has := /has_upgrade/upgrade_id.
+    can := /can_unlock_upgrade/upgrade_id.
+    cost := /get_upgrade_cost/upgrade_id.
+    can_afford := 0.
+    can_afford = 1 when player_bank ge cost.
+    
+    // Available = can unlock AND can afford
+    available := can * can_afford.
+    
+    // Check hover
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    in_x := mx ge x and mx lt x + UPGRADE_NODE_W.
+    in_y := my ge y and my lt y + UPGRADE_NODE_H.
+    hovered := in_x * in_y.
+    
+    // Update global hovered
+    tech_hovered_upgrade = upgrade_id when hovered == 1.
+    
+    // Colors based on state
+    bg_r := 35. bg_g := 40. bg_b := 50.    // Locked (dark)
+    br_r := 60. br_g := 70. br_b := 85.    // Border
+    
+    // Available (can buy)
+    bg_r = 40 when available == 1. bg_g = 55 when available == 1. bg_b = 45 when available == 1.
+    br_r = 80 when available == 1. br_g = 140 when available == 1. br_b = 100 when available == 1.
+    
+    // Can unlock but can't afford
+    just_can := can * (1 - can_afford).
+    bg_r = 50 when just_can == 1. bg_g = 45 when just_can == 1. bg_b = 40 when just_can == 1.
+    br_r = 120 when just_can == 1. br_g = 100 when just_can == 1. br_b = 60 when just_can == 1.
+    
+    // Unlocked
+    bg_r = 30 when has == 1. bg_g = 50 when has == 1. bg_b = 70 when has == 1.
+    br_r = 80 when has == 1. br_g = 130 when has == 1. br_b = 180 when has == 1.
+    
+    // Hover highlight
+    bg_r = bg_r + 15 when hovered == 1.
+    bg_g = bg_g + 15 when hovered == 1.
+    bg_b = bg_b + 15 when hovered == 1.
+    
+    // Draw background
+    /draw_rect/x/y/UPGRADE_NODE_W/UPGRADE_NODE_H/bg_r/bg_g/bg_b/255.
+    
+    // Draw border
+    /draw_rect/x/y/UPGRADE_NODE_W/2/br_r/br_g/br_b/255.
+    /draw_rect/x/y/2/UPGRADE_NODE_H/br_r/br_g/br_b/255.
+    /draw_rect/x/(y + UPGRADE_NODE_H - 2)/UPGRADE_NODE_W/2/br_r/br_g/br_b/255.
+    /draw_rect/(x + UPGRADE_NODE_W - 2)/y/2/UPGRADE_NODE_H/br_r/br_g/br_b/255.
+    
+    // Draw name (shortened)
+    name := /get_upgrade_name/upgrade_id.
+    tx := x + 4.
+    ty := y + 6.
+    
+    text_r := 150. text_g := 150. text_b := 160.
+    text_r = 180 when available == 1. text_g = 220 when available == 1. text_b = 180 when available == 1.
+    text_r = 140 when has == 1. text_g = 180 when has == 1. text_b = 220 when has == 1.
+    
+    /text_draw/tx/ty/10/text_r/text_g/text_b/name.
+    
+    // Draw cost or checkmark
+    cost_y := y + 28.
+    
+    // If unlocked, show checkmark
+    /text_draw/(x + 30)/cost_y/14/100/180/100/"OK" when has == 1.
+    
+    // If locked, show cost
+    cost_r := 100. cost_g := 100. cost_b := 110.
+    cost_r = 100 when available == 1. cost_g = 200 when available == 1. cost_b = 100 when available == 1.
+    cost_r = 200 when just_can == 1. cost_g = 150 when just_can == 1. cost_b = 80 when just_can == 1.
+    /text_draw/(x + 20)/cost_y/12/cost_r/cost_g/cost_b/"$" when has == 0.
+    /text_draw_int/(x + 32)/cost_y/12/cost_r/cost_g/cost_b/cost when has == 0.
+<
+
+#draw_upgrade_tooltip() >
+    // Draw tooltip for hovered upgrade
+    upgrade_id := tech_hovered_upgrade.
+    
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    
+    // Tooltip position (offset from mouse)
+    tx := mx + 15.
+    ty := my - 50.
+    tw := 160.
+    th := 45.
+    
+    // Keep on screen
+    tx = tech_tree_x + tech_tree_w - tw - 10 when tx + tw gt tech_tree_x + tech_tree_w.
+    ty = tech_tree_y + 5 when ty lt tech_tree_y.
+    
+    // Background
+    /draw_rect/tx/ty/tw/th/30/35/45/250.
+    /draw_rect/tx/ty/tw/1/80/90/110/255.
+    
+    // Name
+    name := /get_upgrade_name/upgrade_id.
+    /text_draw/(tx + 5)/(ty + 5)/11/220/220/180/name.
+    
+    // Description
+    desc := /get_upgrade_desc/upgrade_id.
+    /text_draw/(tx + 5)/(ty + 22)/9/160/160/170/desc.
+<
+
+#update_tech_tree() >
+    // Reset hovered
+    tech_hovered_upgrade = -1.
+    
+    // Check for clicks
+    just_clicked := /input_mouse_just_pressed/.
+    << 0 when just_clicked == 0.
+    
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    
+    // Check if in tech tree bounds
+    in_bounds := mx ge tech_tree_x and mx lt tech_tree_x + tech_tree_w.
+    in_bounds = in_bounds * (my ge tech_tree_y and my lt tech_tree_y + tech_tree_h).
+    << 0 when in_bounds == 0.
+    
+    // Check each upgrade node for click
+    tree_x := tech_tree_x + 20.
+    tree_y := tech_tree_y + 35.
+    
+    // Check clicks on each node
+    /check_upgrade_click/(tree_x)/(tree_y)/UPGRADE_STAIRS_RANDOM/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X)/(tree_y)/UPGRADE_ROOM_VARIABLE/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 2)/(tree_y)/UPGRADE_ROOM_2/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_3/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 4)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_4/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 5)/(tree_y - UPGRADE_NODE_SPACING_Y)/UPGRADE_ROOM_5PLUS/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y)/UPGRADE_MONSTER_1/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 4)/(tree_y)/UPGRADE_MONSTER_MORE/mx/my.
+    /check_upgrade_click/(tree_x + UPGRADE_NODE_SPACING_X * 3)/(tree_y + UPGRADE_NODE_SPACING_Y)/UPGRADE_GOLD_SPAWNS/mx/my.
+<
+
+#check_upgrade_click(x, y, upgrade_id, mx, my) >
+    in_x := mx ge x and mx lt x + UPGRADE_NODE_W.
+    in_y := my ge y and my lt y + UPGRADE_NODE_H.
+    clicked := in_x * in_y.
+    
+    << 0 when clicked == 0.
+    
+    // Try to purchase
+    result := /try_purchase_upgrade/upgrade_id.
+    
+    // Regenerate dungeon if purchased (to apply new params)
+    /generate_dungeon/ when result == 1.
 <

@@ -26,6 +26,7 @@ declare global {
     clipboardPasteRequested: number
     clipboardCopyRequested: number
     selectAllRequested: number
+    skipCRT: number
   }
 
   function createModule(options: {

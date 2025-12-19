@@ -137,65 +137,6 @@ entity_attack_dy := [].
     <
     << ret.
 <
-// ============================================================================
-// Random Spawning
-// ============================================================================
-
-#spawn_random_monsters() >
-    /init_entities/.
-    
-    for i in 0..MAX_ENTITIES >
-        // Random Type
-        type_roll := /rng_int/2.
-        type := ENTITY_KOBOLD. // 0
-        type = ENTITY_GOBLIN when type_roll == 1.
-        
-        // Random Position
-        sx := 0. sy := 0.
-        found := 0.
-        
-        // Retry loop for valid position
-        tries := 0.
-        loop when tries lt 100 >
-            rx := /rng_int/MAP_WIDTH.
-            ry := /rng_int/MAP_HEIGHT.
-            
-            tile := /get_tile/rx/ry.
-            is_floor := 0.
-            is_floor = 1 when tile == TILE_FLOOR.
-            
-            // Check player collision
-            is_player := 0.
-            is_player_x := 0. is_player_y := 0.
-            is_player_x = 1 when rx == player_x.
-            is_player_y = 1 when ry == player_y.
-            is_player = is_player_x * is_player_y.
-            
-            // Check entity collision
-            collision := /get_entity_at/rx/ry.
-            is_occupied := 0.
-            is_occupied = 1 when collision != -1.
-            
-            // Accept?
-            valid := is_floor * (1 - is_player).
-            valid = valid * (1 - is_occupied).
-            
-            sx = rx when valid == 1.
-            sy = ry when valid == 1.
-            found = 1 when valid == 1.
-            
-            // Break
-            break_loop := 0.
-            break_loop = 1 when found == 1.
-            tries = 1000 when break_loop == 1.
-             
-            tries = tries + 1.
-        <
-        
-        /spawn_entity/type/sx/sy when found == 1.
-    <
-<
-
 #update_monsters() >
     for i in 0..MAX_ENTITIES >
         active := entity_active[i].

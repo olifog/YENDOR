@@ -519,8 +519,9 @@ bot_message := "".
 #bot_handle_stairs() >
     last_message = "You found the stairs! Banking gold...".
     
-    // Dungeon completion bonus (flat 1 for now, will increase later)
-    dngn_bonus = 1.
+    // Dungeon completion bonus (scales with level)
+    // Base 10 + level bonus makes early progression viable
+    dngn_bonus = 10 + dungeon_level * 2.
     
     // Add current gold + bonus to bank
     player_bank = player_bank + player_gold + dngn_bonus.

@@ -1,0 +1,212 @@
+// tech.nh - Tech tree system for progressive dungeon unlocks
+// ============================================================================
+// Upgrade IDs (for lookup)
+// ============================================================================
+
+// Room progression (linear chain)
+UPGRADE_STAIRS_RANDOM := 0.
+UPGRADE_ROOM_VARIABLE := 1.
+UPGRADE_ROOM_2 := 2.
+UPGRADE_ROOM_3 := 3.
+UPGRADE_ROOM_4 := 4.
+UPGRADE_ROOM_5PLUS := 5.
+
+// Monster branch (requires ROOM_2)
+UPGRADE_MONSTER_1 := 10.
+UPGRADE_MONSTER_MORE := 11.
+
+// Feature branch (requires ROOM_2)
+UPGRADE_GOLD_SPAWNS := 20.
+
+// Total upgrade count
+UPGRADE_COUNT := 9.
+
+// ============================================================================
+// Upgrade State (0 = locked, 1 = unlocked)
+// ============================================================================
+
+upgrades := [].
+
+#init_upgrades() >
+    for i in 0..30 >
+        upgrades[i] = 0.
+    <
+<
+
+#has_upgrade(id) >
+    << upgrades[id].
+<
+
+#unlock_upgrade(id) >
+    upgrades[id] = 1.
+    /recalc_dungeon_params/.
+<
+
+// ============================================================================
+// Upgrade Costs
+// ============================================================================
+
+#get_upgrade_cost(id) >
+    // Room branch
+    << 25 when id == UPGRADE_STAIRS_RANDOM.
+    << 50 when id == UPGRADE_ROOM_VARIABLE.
+    << 100 when id == UPGRADE_ROOM_2.
+    << 150 when id == UPGRADE_ROOM_3.
+    << 200 when id == UPGRADE_ROOM_4.
+    << 300 when id == UPGRADE_ROOM_5PLUS.
+    
+    // Monster branch
+    << 75 when id == UPGRADE_MONSTER_1.
+    << 100 when id == UPGRADE_MONSTER_MORE.
+    
+    // Feature branch
+    << 60 when id == UPGRADE_GOLD_SPAWNS.
+    
+    << 9999. // Unknown upgrade
+<
+
+// ============================================================================
+// Upgrade Prerequisites
+// ============================================================================
+
+#can_unlock_upgrade(id) >
+    // Already unlocked?
+    has := /has_upgrade/id.
+    << 0 when has == 1.
+    
+    // Check prereqs
+    // Tier 1: Random stairs - no prereq
+    << 1 when id == UPGRADE_STAIRS_RANDOM.
+    
+    // Tier 2: Variable rooms - needs random stairs
+    has_stairs := /has_upgrade/UPGRADE_STAIRS_RANDOM.
+    << has_stairs when id == UPGRADE_ROOM_VARIABLE.
+    
+    // Tier 3: Second room - needs variable rooms
+    has_variable := /has_upgrade/UPGRADE_ROOM_VARIABLE.
+    << has_variable when id == UPGRADE_ROOM_2.
+    
+    // Third room - needs second room
+    has_room2 := /has_upgrade/UPGRADE_ROOM_2.
+    << has_room2 when id == UPGRADE_ROOM_3.
+    
+    // Fourth room - needs third room
+    has_room3 := /has_upgrade/UPGRADE_ROOM_3.
+    << has_room3 when id == UPGRADE_ROOM_4.
+    
+    // Fifth+ rooms - needs fourth room
+    has_room4 := /has_upgrade/UPGRADE_ROOM_4.
+    << has_room4 when id == UPGRADE_ROOM_5PLUS.
+    
+    // Monster branch - needs second room
+    << has_room2 when id == UPGRADE_MONSTER_1.
+    
+    // More monsters - needs first monster
+    has_monster1 := /has_upgrade/UPGRADE_MONSTER_1.
+    << has_monster1 when id == UPGRADE_MONSTER_MORE.
+    
+    // Gold spawns - needs second room
+    << has_room2 when id == UPGRADE_GOLD_SPAWNS.
+    
+    << 0. // Unknown
+<
+
+#try_purchase_upgrade(id) >
+    // Check can unlock
+    can := /can_unlock_upgrade/id.
+    << 0 when can == 0.
+    
+    // Check cost
+    cost := /get_upgrade_cost/id.
+    << 0 when player_bank lt cost.
+    
+    // Purchase!
+    player_bank = player_bank - cost.
+    /unlock_upgrade/id.
+    
+    << 1.
+<
+
+// ============================================================================
+// Derived Dungeon Parameters (computed from upgrades)
+// ============================================================================
+
+// These are read by the dungeon generator
+dng_max_rooms := 1.
+dng_min_room_size := 3.
+dng_max_room_size := 3.
+dng_stairs_random := 0.
+dng_monster_count := 0.
+dng_gold_enabled := 0.
+
+#recalc_dungeon_params() >
+    // Room count
+    dng_max_rooms = 1.
+    dng_max_rooms = 2 when /has_upgrade/UPGRADE_ROOM_2 == 1.
+    dng_max_rooms = 3 when /has_upgrade/UPGRADE_ROOM_3 == 1.
+    dng_max_rooms = 4 when /has_upgrade/UPGRADE_ROOM_4 == 1.
+    
+    // 5+ rooms scales with floor
+    has_5plus := /has_upgrade/UPGRADE_ROOM_5PLUS.
+    scaled_rooms := 4 + dungeon_level / 2.
+    scaled_rooms = 8 when scaled_rooms gt 8.
+    dng_max_rooms = scaled_rooms when has_5plus == 1.
+    
+    // Room size
+    dng_min_room_size = 3.
+    dng_max_room_size = 3.
+    dng_max_room_size = 7 when /has_upgrade/UPGRADE_ROOM_VARIABLE == 1.
+    
+    // Stairs placement
+    dng_stairs_random = 0.
+    dng_stairs_random = 1 when /has_upgrade/UPGRADE_STAIRS_RANDOM == 1.
+    
+    // Monster count
+    dng_monster_count = 0.
+    dng_monster_count = 1 when /has_upgrade/UPGRADE_MONSTER_1 == 1.
+    
+    // More monsters scales with rooms
+    has_more := /has_upgrade/UPGRADE_MONSTER_MORE.
+    scaled_monsters := dng_max_rooms - 1.
+    scaled_monsters = 1 when scaled_monsters lt 1.
+    dng_monster_count = scaled_monsters when has_more == 1.
+    
+    // Gold
+    dng_gold_enabled = 0.
+    dng_gold_enabled = 1 when /has_upgrade/UPGRADE_GOLD_SPAWNS == 1.
+<
+
+// ============================================================================
+// Upgrade Names (for UI)
+// ============================================================================
+
+#get_upgrade_name(id) >
+    << "Random Stairs" when id == UPGRADE_STAIRS_RANDOM.
+    << "Variable Rooms" when id == UPGRADE_ROOM_VARIABLE.
+    << "Second Room" when id == UPGRADE_ROOM_2.
+    << "Third Room" when id == UPGRADE_ROOM_3.
+    << "Fourth Room" when id == UPGRADE_ROOM_4.
+    << "Many Rooms" when id == UPGRADE_ROOM_5PLUS.
+    << "First Monster" when id == UPGRADE_MONSTER_1.
+    << "More Monsters" when id == UPGRADE_MONSTER_MORE.
+    << "Gold Spawns" when id == UPGRADE_GOLD_SPAWNS.
+    << "???".
+<
+
+// ============================================================================
+// Upgrade Descriptions (for UI)
+// ============================================================================
+
+#get_upgrade_desc(id) >
+    << "Stairs spawn randomly" when id == UPGRADE_STAIRS_RANDOM.
+    << "Room size varies 3-7" when id == UPGRADE_ROOM_VARIABLE.
+    << "Dungeons have 2 rooms" when id == UPGRADE_ROOM_2.
+    << "Dungeons have 3 rooms" when id == UPGRADE_ROOM_3.
+    << "Dungeons have 4 rooms" when id == UPGRADE_ROOM_4.
+    << "Rooms scale with depth" when id == UPGRADE_ROOM_5PLUS.
+    << "1 monster per floor" when id == UPGRADE_MONSTER_1.
+    << "Monsters scale w/ rooms" when id == UPGRADE_MONSTER_MORE.
+    << "Gold piles spawn" when id == UPGRADE_GOLD_SPAWNS.
+    << "".
+<
+

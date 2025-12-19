@@ -1391,6 +1391,14 @@ Value get_screen_height(void) {
 #endif
 }
 
+void set_skip_crt(Value skip) {
+#ifdef __EMSCRIPTEN__
+  EM_ASM_({ window.skipCRT = $0; }, AS_INT(skip));
+#else
+  (void)skip;
+#endif
+}
+
 void text_clear(void) {
 #ifdef __EMSCRIPTEN__
   int w = AS_INT(get_screen_width());
@@ -1471,6 +1479,68 @@ void text_draw_int(Value x, Value y, Value size, Value r, Value g, Value b,
   text_draw(x, y, size, r, g, b, VAL_OBJ(buf));
 }
 
+// Draw text with a custom font (for intro/special screens)
+// font_id: 0 = serif (Times/Georgia), 1 = handwriting (cursive), 2 = typewriter (Courier)
+void text_draw_font(Value x, Value y, Value size, Value r, Value g, Value b,
+                    Value font_id, Value text_val) {
+  const char *text = (const char *)AS_OBJ(text_val);
+  int font = (int)AS_INT(font_id);
+  int sz = (int)AS_INT(size);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.textCtx) {
+          var fontFamily;
+          switch ($6) {
+            case 0: fontFamily = 'Georgia, "Times New Roman", serif'; break;
+            case 1: fontFamily = '"Brush Script MT", "Segoe Script", cursive'; break;
+            case 2: fontFamily = '"Courier New", Courier, monospace'; break;
+            default: fontFamily = 'Georgia, serif';
+          }
+          window.textCtx.font = $7 + 'px ' + fontFamily;
+          window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
+          window.textCtx.fillText(UTF8ToString($3), $4, $5);
+          // Reset to game font
+          window.textCtx.font = '14px "Berkeley Mono", monospace';
+        }
+      },
+      AS_INT(r), AS_INT(g), AS_INT(b), text, AS_INT(x), AS_INT(y), font, sz);
+#else
+  text_draw(x, y, size, r, g, b, text_val);
+#endif
+}
+
+void text_draw_font_right(Value x, Value y, Value size, Value r, Value g, Value b,
+                          Value font_id, Value text_val) {
+  const char *text = (const char *)AS_OBJ(text_val);
+  int font = (int)AS_INT(font_id);
+  int sz = (int)AS_INT(size);
+#ifdef __EMSCRIPTEN__
+  EM_ASM_(
+      {
+        if (window.textCtx) {
+          var fontFamily;
+          switch ($6) {
+            case 0: fontFamily = 'Georgia, "Times New Roman", serif'; break;
+            case 1: fontFamily = '"Brush Script MT", "Segoe Script", cursive'; break;
+            case 2: fontFamily = '"Courier New", Courier, monospace'; break;
+            default: fontFamily = 'Georgia, serif';
+          }
+          window.textCtx.font = $7 + 'px ' + fontFamily;
+          window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
+          var textStr = UTF8ToString($3);
+          var textWidth = window.textCtx.measureText(textStr).width;
+          window.textCtx.fillText(textStr, $4 - textWidth, $5);
+          // Reset to game font
+          window.textCtx.font = '14px "Berkeley Mono", monospace';
+        }
+      },
+      AS_INT(r), AS_INT(g), AS_INT(b), text, AS_INT(x), AS_INT(y), font, sz);
+#else
+  text_draw(x, y, size, r, g, b, text_val);
+#endif
+}
+
 void draw_rect(Value x, Value y, Value w, Value h, Value r, Value g, Value b,
                Value a) {
 #ifdef __EMSCRIPTEN__
@@ -1489,6 +1559,39 @@ void draw_rect(Value x, Value y, Value w, Value h, Value r, Value g, Value b,
   (void)y;
   (void)w;
   (void)h;
+  (void)r;
+  (void)g;
+  (void)b;
+  (void)a;
+#endif
+}
+
+// Draw a line segment (for signature drawing)
+void draw_line(Value x1, Value y1, Value x2, Value y2, Value width, 
+               Value r, Value g, Value b, Value a) {
+#ifdef __EMSCRIPTEN__
+  EM_ASM(
+      {
+        if (window.textCtx) {
+          window.textCtx.strokeStyle =
+              'rgba(' + $5 + ',' + $6 + ',' + $7 + ',' + ($8 / 255.0) + ')';
+          window.textCtx.lineWidth = $4;
+          window.textCtx.lineCap = 'round';
+          window.textCtx.lineJoin = 'round';
+          window.textCtx.beginPath();
+          window.textCtx.moveTo($0, $1);
+          window.textCtx.lineTo($2, $3);
+          window.textCtx.stroke();
+        }
+      },
+      AS_INT(x1), AS_INT(y1), AS_INT(x2), AS_INT(y2), AS_INT(width),
+      AS_INT(r), AS_INT(g), AS_INT(b), AS_INT(a));
+#else
+  (void)x1;
+  (void)y1;
+  (void)x2;
+  (void)y2;
+  (void)width;
   (void)r;
   (void)g;
   (void)b;

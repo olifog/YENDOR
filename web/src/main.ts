@@ -5,7 +5,8 @@ import {
   initFramebuffers,
   getGL,
   getSceneFBO,
-  renderCRTPass
+  renderCRTPass,
+  renderPassthrough
 } from './renderer'
 import type { WasmModule } from './types'
 
@@ -22,6 +23,7 @@ window.clipboardText = ''
 window.clipboardPasteRequested = 0
 window.clipboardCopyRequested = 0
 window.selectAllRequested = 0
+window.skipCRT = 0
 
 // Value tagging for WASM interop
 function tagInt(n: number): number {
@@ -83,19 +85,32 @@ class Game {
 
     if (!gl || !sceneFBO) return
 
-    // 1. Render Game World to FBO
-    gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBO)
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height)
-    gl.clearColor(0, 0, 0, 1)
-    gl.clear(gl.COLOR_BUFFER_BIT)
+    // Check if we should skip CRT effects (intro/menus)
+    const skipCRT = window.skipCRT === 1
 
-    // Call WASM game functions
-    this.wasmModule._game_update(tagInt(dt))
-    this.wasmModule._game_render()
-    this.wasmModule._on_frame_start()
+    if (skipCRT) {
+      // Call WASM game functions (which will render to text canvas)
+      this.wasmModule._game_update(tagInt(dt))
+      this.wasmModule._game_render()
+      this.wasmModule._on_frame_start()
 
-    // 2. Composite with CRT shader
-    renderCRTPass(this.canvas, this.textCanvas, now)
+      // Render text canvas directly without CRT effects
+      renderPassthrough(this.canvas, this.textCanvas)
+    } else {
+      // 1. Render Game World to FBO
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBO)
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+      gl.clearColor(0, 0, 0, 1)
+      gl.clear(gl.COLOR_BUFFER_BIT)
+
+      // Call WASM game functions
+      this.wasmModule._game_update(tagInt(dt))
+      this.wasmModule._game_render()
+      this.wasmModule._on_frame_start()
+
+      // 2. Composite with CRT shader
+      renderCRTPass(this.canvas, this.textCanvas, now)
+    }
 
     // Clear input flags
     window.mouseJustPressed = 0

@@ -2,6 +2,7 @@
 
 let gl: WebGL2RenderingContext | null = null
 let crtProgram: WebGLProgram | null = null
+let passthroughProgram: WebGLProgram | null = null
 let quadVAO: WebGLVertexArrayObject | null = null
 
 // Framebuffers & Textures
@@ -114,6 +115,30 @@ export async function initCRT(canvas: HTMLCanvasElement): Promise<void> {
     throw new Error('Program link error: ' + gl.getProgramInfoLog(crtProgram))
   }
 
+  // Create passthrough shader (for intro - no CRT effects)
+  const passthroughFsSource = `#version 300 es
+    precision highp float;
+    out vec4 FragColor;
+    in vec2 vUv;
+    uniform sampler2D uText;
+    
+    void main() {
+      vec4 textCol = texture(uText, vUv);
+      FragColor = textCol;
+    }`
+
+  const passthroughVs = createShader(gl, gl.VERTEX_SHADER, vsSource)
+  const passthroughFs = createShader(gl, gl.FRAGMENT_SHADER, passthroughFsSource)
+
+  if (passthroughVs && passthroughFs) {
+    passthroughProgram = gl.createProgram()
+    if (passthroughProgram) {
+      gl.attachShader(passthroughProgram, passthroughVs)
+      gl.attachShader(passthroughProgram, passthroughFs)
+      gl.linkProgram(passthroughProgram)
+    }
+  }
+
   // Fullscreen Quad
   const vertices = new Float32Array([
     -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1
@@ -212,6 +237,38 @@ export function renderCRTPass(
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_2D, sceneTexture)
   gl.activeTexture(gl.TEXTURE1)
+  gl.bindTexture(gl.TEXTURE_2D, textTexture)
+
+  // Draw Quad
+  gl.bindVertexArray(quadVAO)
+  gl.drawArrays(gl.TRIANGLES, 0, 6)
+  gl.bindVertexArray(null)
+}
+
+// Render without CRT effects (for intro/menus)
+export function renderPassthrough(
+  canvas: HTMLCanvasElement,
+  textCanvas: HTMLCanvasElement
+): void {
+  if (!gl || !passthroughProgram || !quadVAO) return
+
+  // Upload Text Canvas to Texture
+  gl.bindTexture(gl.TEXTURE_2D, textTexture)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textCanvas)
+
+  // Render directly to screen
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  gl.viewport(0, 0, canvas.width, canvas.height)
+  gl.clearColor(0.96, 0.92, 0.86, 1) // Cream background
+  gl.clear(gl.COLOR_BUFFER_BIT)
+
+  gl.useProgram(passthroughProgram)
+
+  // Set Uniforms
+  gl.uniform1i(gl.getUniformLocation(passthroughProgram, 'uText'), 0)
+
+  // Bind Texture
+  gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_2D, textTexture)
 
   // Draw Quad
