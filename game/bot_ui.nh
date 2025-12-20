@@ -387,6 +387,22 @@ docs_btn_hovered := 0.
     tr = 200 when docs_btn_hovered == 1. tg = 200 when docs_btn_hovered == 1. tb = 210 when docs_btn_hovered == 1.
     
     /text_draw/(x + 8)/(y + 8)/12/tr/tg/tb/"DOCS".
+    
+    // Notification badge
+    >
+        // Blink effect
+        t := /time_ms/.
+        blink := (t / 500) % 2.
+        
+        nx := x + w - 4.
+        ny := y + 4.
+        
+        // Color pulse: Red to Bright Orange
+        br := 220. bg := 60. bb := 60.
+        br = 255 when blink == 1. bg = 150 when blink == 1. bb = 100 when blink == 1.
+        
+        /draw_rect/nx/ny/8/8/br/bg/bb/255.
+    < when docs_notification_active == 1.
 <
 
 // ============================================================================

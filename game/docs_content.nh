@@ -190,15 +190,14 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Repeat code in a loop.".
         /docs_add_line/"Use >< to continue.".
         
-        /docs_add_code/"// Try all 4 directions".
-        /docs_add_code/"d := 0.".
-        /docs_add_code/"dx := 0.".
-        /docs_add_code/"dy := 0.".
+        /docs_add_code/"// Move in a square using state".
+        /docs_add_code/"dx := 1. dy := 0.  // Start East".
         /docs_add_code/"/loop >".
-        /docs_add_code/"    >< when /can_move/dx/dy.".
-        /docs_add_code/"    d = (d + 1) % 4.".
-        /docs_add_code/"    dx := d % 2.".
-        /docs_add_code/"    dy := (d / 2) % 2.".
+        /docs_add_code/"    /move/dx/dy.".
+        /docs_add_code/"    // Turn Right (East -> South -> West -> North)".
+        /docs_add_code/"    old_dx := dx.".
+        /docs_add_code/"    dx = -dy.".
+        /docs_add_code/"    dy = old_dx.".
         /docs_add_code/"<".
     < when id == 49.
     
@@ -207,10 +206,16 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Iterate a range of numbers.".
         /docs_add_line/"Range: start..end (end excluded)".
         
-        /docs_add_code/"// Check all 4 directions (0, 1, 2, 3)".
-        /docs_add_code/"for dir in 0..3 >".
-        /docs_add_code/"    // You must track dx/dy manually".
-        /docs_add_code/"    // or use helpers like /try_move/".
+        /docs_add_code/"// Try all 4 cardinal directions".
+        /docs_add_code/"dx := 0.".
+        /docs_add_code/"dy := -1".
+        /docs_add_code/"".
+        /docs_add_code/"for i in 0..4 >".
+        /docs_add_code/"    // Rotate 90 degrees counter-clockwise".
+        /docs_add_code/"    old_dx := dx.".
+        /docs_add_code/"    dx = -dy.".
+        /docs_add_code/"    dy = old_dx.".
+        /docs_add_code/"    /move/dx/dy.".
         /docs_add_code/"<".
     < when id == 40.
     
@@ -220,18 +225,17 @@ docs_code_lines := -1. // List handle
         /docs_add_line/">> breaks out of the loop.".
         /docs_add_line/">< skips to next iteration.".
         
-        /docs_add_code/"dir := 0".
+        /docs_add_code/"dx := 1. dy := 0.".
         /docs_add_code/"// Find an open direction".
         /docs_add_code/"loop >".
         /docs_add_code/"    // Break when we can move".
-        /docs_add_code/"    dx := dir % 2.".
-        /docs_add_code/"    dy := (dir / 2) % 2.".
         /docs_add_code/"    >> when /can_move/dx/dy.".
-        /docs_add_code/"    dir = (dir + 1) % 4.".
+        /docs_add_code/"    // Rotate 90 deg".
+        /docs_add_code/"    old_dx := dx.".
+        /docs_add_code/"    dx = -dy.".
+        /docs_add_code/"    dy = old_dx.".
         /docs_add_code/"<".
         /docs_add_code/"// Move in the direction".
-        /docs_add_code/"dx := dir % 2.".
-        /docs_add_code/"dy := (dir / 2) % 2.".
         /docs_add_code/"/move/dx/dy.".
     < when id == 47.
     
@@ -240,23 +244,17 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Ordered list of values.".
         /docs_add_line/"Index starts at 0.".
         
-        /docs_add_code/"// Store cardinal directions".
-        /docs_add_code/"dirs := [\"N\", \"E\", \"S\", \"W\"].".
+        /docs_add_code/"// Store cardinal directions N, E, S, W".
+        /docs_add_code/"dxs := [0, 1, 0, -1].".
+        /docs_add_code/"dys := [-1, 0, 1, 0].".
         /docs_add_code/"len := /list_len/dirs.".
         /docs_add_code/"".
         /docs_add_code/"// Direction translation".
         /docs_add_code/"for i in 0..(len - 1) >".
-        /docs_add_code/"    dx := 0 when dirs[i] == \"N\".".
-        /docs_add_code/"    dx := 1 when dirs[i] == \"E\".".
-        /docs_add_code/"    dx := 0 when dirs[i] == \"S\".".
-        /docs_add_code/"    dx := -1 when dirs[i] == \"W\".".
+        /docs_add_code/"    dx := dxs[i].".
+        /docs_add_code/"    dy := dys[i].".
         /docs_add_code/"".
-        /docs_add_code/"    dy := -1 when dirs[i] == \"N\".".
-        /docs_add_code/"    dy := 0 when dirs[i] == \"E\".".
-        /docs_add_code/"    dy := 1 when dirs[i] == \"S\".".
-        /docs_add_code/"    dy := 0 when dirs[i] == \"W\".".
-        /docs_add_code/"".
-        /docs_add_code/"    /print/(dirs[i] + \": \" + dx + \", \" + dy).".
+        /docs_add_code/"    /print/(dx + \", \" + dy).".
         /docs_add_code/"<".
     < when id == 50.
     
@@ -348,15 +346,16 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Returns 1 if open, 0 if wall.".
         
         /docs_add_code/"// Find first open direction".
-        /docs_add_code/"// Find first open direction".
         /docs_add_code/"dx := 0.".
         /docs_add_code/"dy := 0.".
         /docs_add_code/"".
         /docs_add_code/"n := /can_move/0/-1.".
-        /docs_add_code/"dx = 0   when n. dy = -1 when n.".
+        /docs_add_code/"dx := 0 when n.".
+        /docs_add_code/"dy := -1 when n.".
         /docs_add_code/"".
         /docs_add_code/"e := /can_move/1/0.".
-        /docs_add_code/"dx = 1   when e. dy = 0  when e.".
+        /docs_add_code/"dx := 1 when e.".
+        /docs_add_code/"dy := 0 when e.".
         /docs_add_code/"".
         /docs_add_code/"/move/dx/dy.".
     < when id == 43.

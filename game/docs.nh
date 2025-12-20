@@ -8,6 +8,7 @@ docs_active := 0.
 docs_selected_id := -1.
 docs_copy_timer := 0.
 docs_copy_hovered := 0.
+docs_notification_active := 0.
 
 // Scroll & Search state
 docs_scroll_y := 0.
@@ -563,8 +564,15 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
     docs_scroll_y = 0 when docs_selected_id != -1.
 <
 
+#docs_set_notification() >
+    docs_notification_active = 1.
+<
+
 #toggle_docs() >
     docs_active = 1 - docs_active.
+    
+    // Clear notification when opening
+    docs_notification_active = 0 when docs_active == 1.
     
     // Reset state on open
     docs_scroll_y = 0.

@@ -443,6 +443,7 @@ upgrades := [].
     is_lang := 0.
     is_lang = 1 when id ge 40 and id lt 70.
     /show_language_tutorial/id when is_lang == 1.
+    /docs_set_notification/ when is_lang == 1.
     
     // If it's a speed upgrade, recalculate slider position
     is_speed := 0.
