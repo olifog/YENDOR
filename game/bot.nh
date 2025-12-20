@@ -24,6 +24,7 @@ bot_step_timer := 0.   // Timer for continuous run delay
 bot_step_delay := 1000. // Delay between steps in continuous mode (ms)
 bot_error := "".       // Error message if any
 bot_has_error := 0.    // 1 if there's an error
+bot_error_line := 0 - 1. // Line number where error occurred (-1 = no error)
 
 
 // Current execution line (0-indexed, -1 = not running)
@@ -64,6 +65,10 @@ bot_print_buffer := 0.     // Last printed value
 bot_print_is_string := 0.  // 1 if the value is a string pointer
 bot_has_print := 0.        // 1 if there's a value to display
 
+// Recursion depth tracking for stack overflow protection
+bot_call_depth := 0.       // Current function call depth
+bot_max_call_depth := 100. // Maximum allowed recursion depth
+
 // ============================================================================
 // Bot Control Interface
 // ============================================================================
@@ -72,6 +77,7 @@ bot_has_print := 0.        // 1 if there's a value to display
     // Reset error state first
     bot_error = "".
     bot_has_error = 0.
+    bot_error_line = 0 - 1.
     
     // Concatenate all editor lines into a single source string
     source := "".
@@ -91,6 +97,9 @@ bot_has_print := 0.        // 1 if there's a value to display
     // Tokenize
     tokens := /tokenize/source.
     
+    // Check for lexer errors (unterminated strings, unknown characters)
+    << /bot_set_lex_error/ when lex_error == 1.
+    
     // Check for empty program
     token_count := /ds_list_len/tokens.
     << /bot_set_error/"Empty program" when token_count le 1.
@@ -98,8 +107,8 @@ bot_has_print := 0.        // 1 if there's a value to display
     // Parse into statement list with line numbers
     /bot_parse_to_statements/tokens.
     
-    // Check for parse failure
-    << /bot_set_error/"Syntax error in program" when bot_stmt_count == 0.
+    // Check for parse failure - only set generic error if no specific error was already set
+    << /bot_set_error/"Syntax error in program" when bot_stmt_count == 0 and bot_has_error == 0.
     
     // Create fresh environment
     bot_env = /bot_env_new/.
@@ -116,6 +125,10 @@ bot_has_print := 0.        // 1 if there's a value to display
     pos := 0.
     max_iter := 500.
     iter := 0.
+    // Reset parser error state
+    parse_error = 0.
+    parse_error_line = 0.
+    parse_error_msg = "".
     
     loop >
         tok := /peek/tokens/pos.
@@ -130,9 +143,11 @@ bot_has_print := 0.        // 1 if there's a value to display
         res := /parse_stmt/tokens/pos.
         pos = res->end.
         
-        // Safety: prevent infinite loop
-        pos = pos + 1 when pos == old_pos.
-        >> when pos == old_pos.
+        // Check for parser errors (empty args, etc.)
+        << /bot_set_parser_error/ when parse_error == 1.
+        
+        // Detect parse failure: parser didn't advance - set error and stop
+        << /bot_set_parse_error/stmt_line/tok when pos == old_pos.
         
         // Store statement and its line number
         /bot_add_statement/res->node/stmt_line when res->node != 0.
@@ -166,7 +181,11 @@ bot_has_print := 0.        // 1 if there's a value to display
 
 // Call this from editor when code is modified
 #bot_notify_code_changed() >
-    // Only reset if actively stepping - play mode recompiles every time
+    // Clear error state when code changes - user is fixing the problem
+    bot_error_line = 0 - 1.
+    bot_has_error = 0.
+    bot_error = "".
+    // Only reset stepping state if actively stepping
     /bot_reset_on_change/ when bot_is_stepping == 1.
 <
 
@@ -177,6 +196,131 @@ bot_message := "".
     bot_has_error = 1.
     bot_message = msg.
     << 0.
+<
+
+#bot_set_parse_error(line, tok) >
+    bot_error_line = line.
+    // Use specific error message if available, otherwise generic
+    msg := "Syntax error".
+    msg = parse_error_msg when parse_error_msg != "".
+    bot_error = msg.
+    bot_has_error = 1.
+    bot_message = msg.
+    << 0.
+<
+
+#bot_set_lex_error() >
+    bot_error_line = lex_error_line.
+    bot_error = lex_error_msg.
+    bot_has_error = 1.
+    bot_message = lex_error_msg.
+    << 0.
+<
+
+#bot_set_parser_error() >
+    bot_error_line = parse_error_line.
+    bot_error = parse_error_msg.
+    bot_has_error = 1.
+    bot_message = parse_error_msg.
+    << 0.
+<
+
+#bot_arg_error(func_name, expected, got) >
+    // Save error info before reset
+    err_line := bot_current_line.
+    
+    // Reset program state (similar to bot_stop but preserve error)
+    bot_is_running = 0.
+    bot_is_stepping = 0.
+    bot_stmt_index = 0.
+    bot_current_line = 0 - 1.
+    // Reset loop state
+    bot_yield = 0.
+    bot_in_loop = 0.
+    bot_loop_node = 0.
+    bot_loop_env = 0.
+    bot_loop_body_count = 0.
+    bot_loop_body_idx = 0.
+    
+    // Set error info (after reset so it's not overwritten)
+    bot_error_line = err_line.
+    bot_error = "Wrong number of arguments".
+    bot_has_error = 1.
+    bot_message = "Wrong number of arguments".
+    << 0.
+<
+
+// ============================================================================
+// Runtime Error Helpers
+// All use same pattern: save line, reset state, set error, return 0
+// ============================================================================
+
+// Generic runtime error - use for any runtime error
+#bot_runtime_error(msg) >
+    err_line := bot_current_line.
+    
+    bot_is_running = 0.
+    bot_is_stepping = 0.
+    bot_stmt_index = 0.
+    bot_current_line = 0 - 1.
+    bot_yield = 0.
+    bot_in_loop = 0.
+    bot_loop_node = 0.
+    bot_loop_env = 0.
+    bot_loop_body_count = 0.
+    bot_loop_body_idx = 0.
+    
+    bot_error_line = err_line.
+    bot_error = msg.
+    bot_has_error = 1.
+    bot_message = msg.
+    << 0.
+<
+
+// Division by zero error
+#bot_div_zero_error() >
+    << /bot_runtime_error/"Division by zero".
+<
+
+// Undefined function error
+#bot_undefined_func_error(name) >
+    msg := /ds_string_concat/"Undefined function: "/name.
+    << /bot_runtime_error/msg.
+<
+
+// Undefined variable error
+#bot_undefined_var_error(name) >
+    msg := /ds_string_concat/"Undefined variable: "/name.
+    << /bot_runtime_error/msg.
+<
+
+// Index out of bounds error
+#bot_index_error(index, length) >
+    msg := "Index out of bounds".
+    << /bot_runtime_error/msg.
+<
+
+// Expected list error
+#bot_expected_list_error(context) >
+    msg := /ds_string_concat/"Expected list in "/context.
+    << /bot_runtime_error/msg.
+<
+
+// Expected object error  
+#bot_expected_object_error(context) >
+    msg := /ds_string_concat/"Expected object in "/context.
+    << /bot_runtime_error/msg.
+<
+
+// Expected integer error
+#bot_expected_int_error(context) >
+    msg := /ds_string_concat/"Expected number in "/context.
+    << /bot_runtime_error/msg.
+<
+
+// Recursion depth exceeded error
+#bot_recursion_error() >
+    << /bot_runtime_error/"Maximum recursion depth exceeded".
 <
 
 #bot_start() >
@@ -210,6 +354,7 @@ bot_message := "".
     bot_stmt_count = 0.
     bot_stmt_index = 0.
     bot_current_line = 0 - 1.
+    bot_error_line = 0 - 1.
     bot_code_hash = 0.
     // Reset loop state
     bot_yield = 0.
@@ -218,6 +363,8 @@ bot_message := "".
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    // Reset call depth
+    bot_call_depth = 0.
     // last_message = "Bot stopped.". // Removed to prevent duplicate
     bot_message = "Bot stopped.".
     // Clear arrays so GC can collect old objects
@@ -292,6 +439,9 @@ bot_message := "".
     
     // Execute current statement
     /bot_execute_current_statement/.
+    
+    // If runtime error occurred, stop immediately (don't clear error state)
+    << 0 when bot_has_error == 1.
     
     // Check if bot reached stairs
     tile := /get_tile/player_x/player_y.

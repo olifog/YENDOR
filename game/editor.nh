@@ -2726,6 +2726,10 @@ SYN_TOK_PUNCT := 8.
         is_active := (bot_is_running == 1 or bot_is_stepping == 1).
         /draw_exec_indicator/(editor_x)/(ly - 2)/(line_num_width + 5) when is_exec_line == 1 and is_active == 1.
         
+        // Error line indicator - highlight line in red when there's a parse error
+        is_error_line := (actual_line == bot_error_line).
+        /draw_error_indicator/(editor_x)/(ly - 2)/(editor_width - 10) when is_error_line == 1 and bot_has_error == 1.
+        
         // Line number
         lnx := editor_x + 5.
         /text_draw_int/lnx/ly/EDITOR_FONT_SIZE/ED_LINENUM_R/ED_LINENUM_G/ED_LINENUM_B/(actual_line + 1).
@@ -2798,6 +2802,11 @@ SYN_TOK_PUNCT := 8.
 #draw_exec_arrow(x, y) >
     // Draw a small arrow marker (>) to indicate execution point
     /text_draw/x/y/EDITOR_FONT_SIZE/100/255/100/">".
+<
+
+#draw_error_indicator(x, y, w) >
+    // Draw a red highlight behind the error line
+    /draw_rect/x/y/w/EDITOR_LINE_HEIGHT/80/30/30/180.
 <
 
 #draw_editor_cursor() >

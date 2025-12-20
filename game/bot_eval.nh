@@ -213,6 +213,9 @@
     name := node->name.
     args := node->args.
     
+    // Update current line for runtime error highlighting (line is 0-indexed)
+    bot_current_line = node->line when node->line ge 0.
+    
     // Check for built-in functions first
     << /bot_builtin_move/args/env when /ds_streq/name/"move".
     << /bot_builtin_get_x/args/env when /ds_streq/name/"get_x".
@@ -247,6 +250,15 @@
     // Look up user-defined function
     func := /bot_env_get/env/name.
     
+    // ERROR: Undefined function
+    << /bot_undefined_func_error/name when func == 0.
+    
+    // ERROR: Recursion depth exceeded
+    << /bot_recursion_error/ when bot_call_depth ge bot_max_call_depth.
+    
+    // Increment call depth
+    bot_call_depth = bot_call_depth + 1.
+    
     params := func->params.
     body := func->body.
     closure_env := func->env.
@@ -274,6 +286,9 @@
     
     // Pop env from GC protection stack before returning
     /gc_pop_env/.
+    
+    // Decrement call depth
+    bot_call_depth = bot_call_depth - 1.
     
     << (flow == 2) | >
         1 => ret
@@ -336,6 +351,16 @@
 #bot_eval_index(node, env) >
     arr := /bot_eval/node->arr/env.
     idx := /bot_eval/node->idx/env.
+    
+    // ERROR: Validate arr is a list
+    is_list := /ds_is_list/arr.
+    << /bot_expected_list_error/"index access" when is_list == 0.
+    
+    // ERROR: Bounds check
+    len := /ds_list_len/arr.
+    << /bot_index_error/idx/len when idx lt 0.
+    << /bot_index_error/idx/len when idx ge len.
+    
     << /ds_list_get/arr/idx.
 <
 
@@ -360,6 +385,11 @@
 #bot_eval_prop(node, env) >
     /console_log/"bot_eval_prop evaluating...".
     obj := /bot_eval/node->obj/env.
+    
+    // ERROR: Validate obj is an object
+    is_obj := /ds_is_object/obj.
+    << /bot_expected_object_error/"property access" when is_obj == 0.
+    
     /console_log/"bot_eval_prop obj:".
     /console_log_int/obj.
     key := node->key.
@@ -396,8 +426,8 @@
         TAG_NEG => 0 - /bot_eval/node->a/env
         TAG_SUB => /bot_eval/node->a/env - /bot_eval/node->b/env
         TAG_MUL => /bot_eval/node->a/env * /bot_eval/node->b/env
-        TAG_DIV => /ds_div/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)
-        TAG_MOD => /ds_mod/(/bot_eval/node->a/env)/(/bot_eval/node->b/env)
+        TAG_DIV => /bot_eval_div/node/env
+        TAG_MOD => /bot_eval_mod/node/env
         TAG_LT => (/bot_eval/node->a/env lt /bot_eval/node->b/env)
         TAG_GT => (/bot_eval/node->a/env gt /bot_eval/node->b/env)
         TAG_LE => (/bot_eval/node->a/env le /bot_eval/node->b/env)
@@ -464,12 +494,38 @@
     << /ds_string_concat/s1/s2.
 <
 
+// Division with zero check
+#bot_eval_div(node, env) >
+    a := /bot_eval/node->a/env.
+    b := /bot_eval/node->b/env.
+    
+    // ERROR: Division by zero
+    << /bot_div_zero_error/ when b == 0.
+    
+    << /ds_div/a/b.
+<
+
+// Modulo with zero check
+#bot_eval_mod(node, env) >
+    a := /bot_eval/node->a/env.
+    b := /bot_eval/node->b/env.
+    
+    // ERROR: Division by zero (modulo)
+    << /bot_div_zero_error/ when b == 0.
+    
+    << /ds_mod/a/b.
+<
+
 // ============================================================================
 // Built-in Functions for Bot Control
 // ============================================================================
 
 // /move/dx/dy - Move the bot by delta x and y
 #bot_builtin_move(args, env) >
+    // Check argument count
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"move"/2/arg_count when arg_count != 2.
+    
     dx := /bot_eval/(/ds_list_get/args/0)/env.
     dy := /bot_eval/(/ds_list_get/args/1)/env.
     
@@ -494,6 +550,9 @@
 
 // /look/dx/dy - Look at a tile relative to the bot
 #bot_builtin_look(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"look"/2/arg_count when arg_count != 2.
+    
     dx := /bot_eval/(/ds_list_get/args/0)/env.
     dy := /bot_eval/(/ds_list_get/args/1)/env.
     
@@ -504,6 +563,9 @@
 // Direction: 0=north, 1=east, 2=south, 3=west (clockwise)
 // Returns 1 if walkable, 0 otherwise
 #bot_builtin_can_move(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"can_move"/1/arg_count when arg_count != 1.
+    
     dir := /bot_eval/(/ds_list_get/args/0)/env.
     
     // Convert direction to dx/dy (clockwise: N=0, E=1, S=2, W=3)
@@ -526,6 +588,9 @@
 
 // /print/value - Print a value to the message area for debugging
 #bot_builtin_print(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"print"/1/arg_count when arg_count lt 1.
+    
     // /print/val - Print generic value
     // /print/val/1 - Print value as string (force)
     
@@ -550,12 +615,18 @@
 // /strcat/a/b - Concatenate two strings
 // /json/val - Force convert object/list to string (JSON)
 #bot_builtin_json(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"json"/1/arg_count when arg_count != 1.
+    
     node := /ds_list_get/args/0.
     val := /bot_eval/node/env.
     << /ds_json_encode/val.
 <
 
 #bot_builtin_strcat(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"strcat"/2/arg_count when arg_count != 2.
+    
     a := /bot_eval/(/ds_list_get/args/0)/env.
     b := /bot_eval/(/ds_list_get/args/1)/env.
     << /ds_string_concat/a/b.
@@ -563,32 +634,59 @@
 
 // /get_hp/ - Get current HP
 #bot_builtin_get_hp(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"get_hp"/0/arg_count when arg_count != 0.
+    
     << player_hp.
 <
 
 // /get_max_hp/ - Get max HP
 #bot_builtin_get_max_hp(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"get_max_hp"/0/arg_count when arg_count != 0.
+    
     << player_max_hp.
 <
 
 // /get_gold/ - Get current Gold
 #bot_builtin_get_gold(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"get_gold"/0/arg_count when arg_count != 0.
+    
     << player_gold.
 <
 
 // /get_level/ - Get current Dungeon Level
 #bot_builtin_get_level(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"get_level"/0/arg_count when arg_count != 0.
+    
     << dungeon_level.
 <
 // /rng_int/max - Returns random integer 0..max-1
 #bot_builtin_rng_int(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"rng_int"/1/arg_count when arg_count != 1.
+    
     max := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    // ERROR: Validate positive integer
+    << /bot_expected_int_error/"rng_int" when max le 0.
+    
     << /rng_int/max.
 <
 
 // /list_len/list - Returns length of a list/array (a ds_list_len alias)
 #bot_builtin_list_len(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"list_len"/1/arg_count when arg_count != 1.
+    
     list := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    // ERROR: Validate list is a list
+    is_list := /ds_is_list/list.
+    << /bot_expected_list_error/"list_len" when is_list == 0.
+    
     << /ds_list_len/list.
 <
 
@@ -599,7 +697,15 @@
 
 // /list_push/list/value - Push a value to a list
 #bot_builtin_list_push(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"list_push"/2/arg_count when arg_count != 2.
+    
     list := /bot_eval/(/ds_list_get/args/0)/env.
+    
+    // ERROR: Validate list is a list
+    is_list := /ds_is_list/list.
+    << /bot_expected_list_error/"list_push" when is_list == 0.
+    
     value := /bot_eval/(/ds_list_get/args/1)/env.
     /ds_list_push/list/value.
     << list.
@@ -607,8 +713,21 @@
 
 // /list_get/list/index - Get a value from a list at index
 #bot_builtin_list_get(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"list_get"/2/arg_count when arg_count != 2.
+    
     list := /bot_eval/(/ds_list_get/args/0)/env.
     index := /bot_eval/(/ds_list_get/args/1)/env.
+    
+    // ERROR: Validate list is a list
+    is_list := /ds_is_list/list.
+    << /bot_expected_list_error/"list_get" when is_list == 0.
+    
+    // ERROR: Bounds check
+    len := /ds_list_len/list.
+    << /bot_index_error/index/len when index lt 0.
+    << /bot_index_error/index/len when index ge len.
+    
     << /ds_list_get/list/index.
 <
 
@@ -621,6 +740,9 @@
 // /check_surroundings/ - Returns 3x3 grid of char codes
 // [[NW, N, NE], [W, C, E], [SW, S, SE]]
 #bot_builtin_check_surroundings(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"check_surroundings"/0/arg_count when arg_count != 0.
+    
     grid := /ds_list_create/.
     
     // Iterate rows (dy: -1 to 1)
@@ -688,6 +810,9 @@
 // /scan_area/radius - Returns (2n+1)x(2n+1) grid of char codes
 // Extended version of check_surroundings with variable radius
 #bot_builtin_scan_area(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"scan_area"/1/arg_count when arg_count != 1.
+    
     radius := /bot_eval/(/ds_list_get/args/0)/env.
     
     // Cap radius at 5 to limit allocations
@@ -774,6 +899,9 @@
 // Returns {x, y, dist, type} or 0 if not found
 // Types: "monster", "gold", "stairs", "door", "kobold", "goblin"
 #bot_builtin_find_nearest(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"find_nearest"/1/arg_count when arg_count != 1.
+    
     type_str := /bot_eval/(/ds_list_get/args/0)/env.
     
     px := player_x.
@@ -881,6 +1009,9 @@
 // /get_room_info/ - Analyze current room
 // Returns {in_room, width, height, exits[], entities[], items[]}
 #bot_builtin_get_room_info(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"get_room_info"/0/arg_count when arg_count != 0.
+    
     px := player_x.
     py := player_y.
     
@@ -1043,6 +1174,9 @@ pf_parent := [].
 // /pathfind_to/x/y - A* pathfinding to target
 // Returns list of {dx, dy} moves, or 0 if unreachable
 #bot_builtin_pathfind_to(args, env) >
+    arg_count := /ds_list_len/args.
+    << /bot_arg_error/"pathfind_to"/2/arg_count when arg_count != 2.
+    
     tx := /bot_eval/(/ds_list_get/args/0)/env.
     ty := /bot_eval/(/ds_list_get/args/1)/env.
     

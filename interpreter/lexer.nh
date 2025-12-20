@@ -59,6 +59,17 @@ TOK_BACKSLASH := 46.  // \ for lambda
 // Current line during tokenization
 lex_line := 0.
 
+// Lexer error state
+lex_error := 0.
+lex_error_line := 0.
+lex_error_msg := "".
+
+#set_lex_error(msg, line) >
+    lex_error = 1.
+    lex_error_line = line.
+    lex_error_msg = msg.
+<
+
 // Lexer Helpers
 #is_digit(c) => c ge 48 and c le 57.
 #is_alpha(c) => (c ge 65 and c le 90) or (c ge 97 and c le 122) or c == 95.
@@ -100,14 +111,23 @@ lex_line := 0.
 
 #tokenize_string(str, i, tokens) >
     // Skip opening quote
+    start_line := lex_line.
     i = i + 1.
     start := i.
     len := /ds_strlen/str.
     
     loop >
+        // Check for end of input - unterminated string
+        /set_lex_error/"Unterminated string"/start_line when i ge len.
         >> when i ge len.
+        
         c := /ds_string_at/str/i.
         >> when c == 34. // closing "
+        
+        // Check for newline inside string - unterminated
+        /set_lex_error/"Unterminated string (newline in string)"/start_line when c == 10.
+        >> when c == 10.
+        
         i = i + 1.
     <
     
@@ -228,8 +248,13 @@ lex_line := 0.
         125 => /do/(/ds_list_push/tokens/(/token/TOK_RBRACE/0))/(i + 1) // }
         58 => /do/(/ds_list_push/tokens/(/token/TOK_COLON/0))/(i + 1) // : (single, not :=)
         92 => /do/(/ds_list_push/tokens/(/token/TOK_BACKSLASH/0))/(i + 1) // \
-        _ => (i + 1)
+        _ => /lex_unknown_char/c/(i + 1)
     <.
+<
+
+#lex_unknown_char(c, next_pos) >
+    /set_lex_error/"Unknown character"/lex_line.
+    << next_pos.
 <
 
 #tokenize(str) >
@@ -237,6 +262,10 @@ lex_line := 0.
     len := /ds_strlen/str.
     i := 0.
     lex_line = 0.
+    // Reset error state
+    lex_error = 0.
+    lex_error_line = 0.
+    lex_error_msg = "".
     
     loop >
         >> when i ge len.

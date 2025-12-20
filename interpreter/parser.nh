@@ -1,16 +1,40 @@
 // Parser module - all parse_* functions
 // Requires: lexer.nh (for TOK_* constants), ast.nh (for AST constructors)
 
+// Parser error state (checked by bot after parsing)
+parse_error := 0.
+parse_error_line := 0.
+parse_error_msg := "".
+
+#set_parse_error(msg, tok) >
+    parse_error = 1.
+    parse_error_line = tok->line.
+    parse_error_msg = msg.
+<
+
+#set_parse_error_at_line(msg, line) >
+    parse_error = 1.
+    parse_error_line = line.
+    parse_error_msg = msg.
+<
+
 #peek(tokens, pos) >
     << /ds_list_get/tokens/pos.
 <
 
 #parse_paren(tokens, pos) >
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
+    
     res := /parse_expr/tokens/(pos + 1).
     // Expect RPAREN
     end := res->end.
     rparen := /peek/tokens/end.
-    end = (rparen->type == 12) | > 1 => end + 1 0 => end <.
+    
+    // Error if RPAREN missing
+    /set_parse_error_at_line/"Missing ')' in expression"/start_line when rparen->type != TOK_RPAREN.
+    
+    end = end + 1 when rparen->type == TOK_RPAREN.
     << { node: res->node, end: end }.
 <
 
@@ -18,9 +42,16 @@
     pos = pos + 1. // Skip [
     
     elements := /ds_list_create/.
+    max_iter := 100.
+    iter := 0.
     loop >
         tok := /peek/tokens/pos.
         >> when tok->type == TOK_RBRACKET.
+        >> when tok->type == TOK_EOF.
+        >> when iter ge max_iter.
+        
+        // Safety: detect if we're not making progress
+        old_pos := pos.
         
         elem_res := /parse_expr/tokens/pos.
         /ds_list_push/elements/elem_res->node.
@@ -29,26 +60,49 @@
         // Check for comma
         tok = /peek/tokens/pos.
         pos = pos + 1 when tok->type == TOK_COMMA.
+        
+        // If pos didn't advance, we're stuck - set error and break
+        /set_parse_error/"Syntax error in array"/tok when pos == old_pos.
+        >> when pos == old_pos.
+        
+        iter = iter + 1.
     <
     
-    // Skip ]
-    pos = pos + 1.
+    // Check for missing closing bracket
+    close := /peek/tokens/pos.
+    /set_parse_error/"Missing ']' in array"/close when close->type != TOK_RBRACKET.
+    
+    // Skip ] only if present
+    pos = pos + 1 when close->type == TOK_RBRACKET.
     << { node: /arr_lit/elements, end: pos }.
 <
 
 #parse_object(tokens, pos) >
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip {
     
     fields := /ds_list_create/.
+    max_iter := 100.
+    iter := 0.
     loop >
         tok := /peek/tokens/pos.
         >> when tok->type == TOK_RBRACE.
+        >> when tok->type == TOK_EOF.
+        >> when iter ge max_iter.
         
-        // Get key (must be identifier)
+        // Validate key is identifier
+        /set_parse_error_at_line/"Expected identifier as object key"/start_line when tok->type != TOK_IDENT.
+        >> when tok->type != TOK_IDENT.
+        
+        // Get key
         key := tok->value.
         pos = pos + 1.
         
-        // Expect :
+        // Expect : (TOK_COLON = 47)
+        colon := /peek/tokens/pos.
+        /set_parse_error_at_line/"Expected ':' after object key"/start_line when colon->type != TOK_COLON.
+        >> when colon->type != TOK_COLON.
         pos = pos + 1.
         
         // Parse value
@@ -60,22 +114,40 @@
         // Check for comma
         tok = /peek/tokens/pos.
         pos = pos + 1 when tok->type == TOK_COMMA.
+        
+        iter = iter + 1.
     <
     
-    // Skip }
-    pos = pos + 1.
+    // Check for missing closing brace
+    close := /peek/tokens/pos.
+    /set_parse_error_at_line/"Missing '}' in object"/start_line when close->type != TOK_RBRACE.
+    
+    // Skip } only if present
+    pos = pos + 1 when close->type == TOK_RBRACE.
     << { node: /obj_lit/fields, end: pos }.
 <
 
 // Lambda: \(x, y) => body
 #parse_lambda(tokens, pos) >
-    pos = pos + 2. // Skip \ and (
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
+    pos = pos + 1. // Skip \
+    
+    // Validate (
+    lparen := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '(' after '\\'"/start_line when lparen->type != TOK_LPAREN.
+    << { node: /lit/0, end: pos } when lparen->type != TOK_LPAREN.
+    pos = pos + 1.
     
     // Parse parameters
     params := /ds_list_create/.
+    max_iter := 50.
+    iter := 0.
     loop >
         tok := /peek/tokens/pos.
         >> when tok->type == TOK_RPAREN.
+        >> when tok->type == TOK_EOF.
+        >> when iter ge max_iter.
         
         // Get param name
         /ds_list_push/params/tok->value.
@@ -84,12 +156,19 @@
         // Check for comma
         tok = /peek/tokens/pos.
         pos = pos + 1 when tok->type == TOK_COMMA.
+        iter = iter + 1.
     <
     
-    // Skip )
+    // Validate )
+    rparen := /peek/tokens/pos.
+    /set_parse_error_at_line/"Missing ')' in lambda"/start_line when rparen->type != TOK_RPAREN.
+    << { node: /lit/0, end: pos } when rparen->type != TOK_RPAREN.
     pos = pos + 1.
     
-    // Expect =>
+    // Validate =>
+    arrow := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '=>' in lambda"/start_line when arrow->type != TOK_ARROW.
+    << { node: /lit/0, end: pos } when arrow->type != TOK_ARROW.
     pos = pos + 1.
     
     // Parse body expression
@@ -151,17 +230,30 @@
 <
 
 #parse_index_rest(tokens, pos, node) >
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip [
     idx_res := /parse_expr/tokens/pos.
     pos = idx_res->end.
-    pos = pos + 1. // Skip ]
+    
+    // Validate ]
+    rbracket := /peek/tokens/pos.
+    /set_parse_error_at_line/"Missing ']' in index access"/start_line when rbracket->type != TOK_RBRACKET.
+    pos = pos + 1 when rbracket->type == TOK_RBRACKET.
+    
     new_node := /index_op/node/idx_res->node.
     << /parse_primary_postfix/tokens/pos/new_node.
 <
 
 #parse_prop_rest(tokens, pos, node) >
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip ->
     key_tok := /peek/tokens/pos.
+    
+    // Validate property name is identifier
+    /set_parse_error_at_line/"Expected property name after '->'"/start_line when key_tok->type != TOK_IDENT.
+    
     key := key_tok->value.
     pos = pos + 1.
     new_node := /prop_op/node/key.
@@ -207,6 +299,15 @@
         type := tok->type.
         is_op := (type == TOK_STAR or type == TOK_SLASH or type == TOK_PERCENT).
         >> when not is_op.
+        
+        // Detect accidental function call in expression context: /identifier/
+        // If we see / followed by identifier followed by /, it's probably meant as a function call
+        // Note: /identifier. is valid division, only /identifier/ is suspicious
+        next := /peek/tokens/(pos + 1).
+        after := /peek/tokens/(pos + 2).
+        is_func_pattern := (type == TOK_SLASH and next->type == TOK_IDENT and after->type == TOK_SLASH).
+        /set_parse_error/"Possible missing '.' before function call"/tok when is_func_pattern.
+        >> when is_func_pattern.
         
         pos = pos + 1.
         right_res := /parse_primary/tokens/pos.
@@ -370,6 +471,11 @@
     res := /parse_expr/tokens/(pos + 2).
     // Expect DOT
     dot := /peek/tokens/res->end.
+    
+    // Error if DOT is missing (but allow when/unless modifiers)
+    // Use line from start of statement for error highlighting
+    /set_parse_error_at_line/"Missing '.' after assignment"/line when dot->type != TOK_DOT and dot->type != TOK_WHEN and dot->type != TOK_UNLESS.
+    
     end := (dot->type == TOK_DOT) | >
         1 => res->end + 1
         0 => res->end
@@ -379,9 +485,18 @@
 <
 
 #parse_stmt_expr_stmt(tokens, pos) >
+    // Get starting token for error line
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
+    
     res := /parse_expr/tokens/pos.
     // Expect DOT
     dot := /peek/tokens/res->end.
+    
+    // Error if DOT is missing (but allow when/unless modifiers)
+    // Use line from start of statement for error highlighting
+    /set_parse_error_at_line/"Missing '.' after expression"/start_line when dot->type != TOK_DOT and dot->type != TOK_WHEN and dot->type != TOK_UNLESS.
+    
     end := (dot->type == TOK_DOT) | >
         1 => res->end + 1
         0 => res->end
@@ -398,6 +513,12 @@
 <
 
 #parse_block(tokens, pos) >
+    // Track start line for error reporting
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
+    // Adjust for the > that was consumed before calling this
+    start_line = start_line - 1 when start_line gt 0.
+    
     prog := 0.
     max_iter := 500.
     iter := 0.
@@ -408,10 +529,15 @@
         >> when tok->type == TOK_SCOPE_OUT.
         >> when tok->type == TOK_EOF.
         >> when iter ge max_iter.
+        // Exit early on parse error
+        >> when parse_error == 1.
         
         old_pos := pos.
         res := /parse_stmt/tokens/pos.
         pos = res->end.
+        
+        // Exit if statement parsing set an error
+        >> when parse_error == 1.
         
         // Safety: prevent infinite loop
         pos = pos + 1 when pos == old_pos.
@@ -425,15 +551,25 @@
         iter = iter + 1.
     <
     
-    // Skip <
-    pos = pos + 1.
+    // Validate closing < exists
+    close_tok := /peek/tokens/pos.
+    /set_parse_error_at_line/"Missing '<' to close block"/start_line when close_tok->type != TOK_SCOPE_OUT.
+    
+    // Skip < only if present
+    pos = pos + 1 when close_tok->type == TOK_SCOPE_OUT.
     << { node: prog, end: pos }.
 <
 
 #parse_loop(tokens, pos) >
     // Expect loop > ... <
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip loop
-    // Expect > (TOK_SCOPE_IN)
+    
+    // Validate > (TOK_SCOPE_IN)
+    scope_in := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '>' after 'loop'"/start_line when scope_in->type != TOK_SCOPE_IN.
+    << { node: /lit/0, end: pos } when scope_in->type != TOK_SCOPE_IN.
     pos = pos + 1.
     
     body := /parse_block/tokens/pos.
@@ -459,30 +595,43 @@
 
 #parse_for(tokens, pos) >
     // Expect for x in start..end > ... <
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip for
     
-    // Expect IDENT
-    tok := /peek/tokens/pos.
-    var := tok->value.
+    // Validate variable identifier
+    var_tok := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected variable name after 'for'"/start_line when var_tok->type != TOK_IDENT.
+    << { node: /lit/0, end: pos } when var_tok->type != TOK_IDENT.
+    var := var_tok->value.
     pos = pos + 1.
     
-    // Expect IN
+    // Validate IN keyword
+    in_tok := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected 'in' in for loop"/start_line when in_tok->type != TOK_IN.
+    << { node: /lit/0, end: pos } when in_tok->type != TOK_IN.
     pos = pos + 1.
     
-    // Expect start
+    // Parse start expression
     start_res := /parse_expr/tokens/pos.
     pos = start_res->end.
     start := start_res->node.
     
-    // Expect .. (TOK_RANGE)
+    // Validate .. (TOK_RANGE)
+    range_tok := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '..' in for loop range"/start_line when range_tok->type != TOK_RANGE.
+    << { node: /lit/0, end: pos } when range_tok->type != TOK_RANGE.
     pos = pos + 1.
     
-    // Expect end
+    // Parse end expression
     end_res := /parse_expr/tokens/pos.
     pos = end_res->end.
     end := end_res->node.
     
-    // Expect > (TOK_SCOPE_IN)
+    // Validate > (TOK_SCOPE_IN)
+    scope_in := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '>' after for loop range"/start_line when scope_in->type != TOK_SCOPE_IN.
+    << { node: /lit/0, end: pos } when scope_in->type != TOK_SCOPE_IN.
     pos = pos + 1.
     
     body := /parse_block/tokens/pos.
@@ -491,6 +640,8 @@
 
 // Parse function definition: #name(param1, param2) > body <
 #parse_func(tokens, pos) >
+    start_tok := /peek/tokens/pos.
+    start_line := start_tok->line.
     pos = pos + 1. // Skip #
     
     // Get function name
@@ -498,7 +649,10 @@
     name := tok->value.
     pos = pos + 1.
     
-    // Expect (
+    // Validate (
+    lparen := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '(' after function name"/start_line when lparen->type != TOK_LPAREN.
+    << { node: /lit/0, end: pos } when lparen->type != TOK_LPAREN.
     pos = pos + 1.
     
     // Parse parameters
@@ -508,6 +662,7 @@
     loop >
         tok = /peek/tokens/pos.
         >> when tok->type == TOK_RPAREN.
+        >> when tok->type == TOK_EOF.
         >> when iter ge max_iter.
         
         // Get param name
@@ -520,10 +675,16 @@
         iter = iter + 1.
     <
     
-    // Skip )
+    // Validate )
+    rparen := /peek/tokens/pos.
+    /set_parse_error_at_line/"Missing ')' in function definition"/start_line when rparen->type != TOK_RPAREN.
+    << { node: /lit/0, end: pos } when rparen->type != TOK_RPAREN.
     pos = pos + 1.
     
-    // Expect > (TOK_SCOPE_IN)
+    // Validate > (TOK_SCOPE_IN)
+    scope_in := /peek/tokens/pos.
+    /set_parse_error_at_line/"Expected '>' after function parameters"/start_line when scope_in->type != TOK_SCOPE_IN.
+    << { node: /lit/0, end: pos } when scope_in->type != TOK_SCOPE_IN.
     pos = pos + 1.
     
     // Parse body
@@ -538,6 +699,10 @@
     
     // Get function name
     tok := /peek/tokens/pos.
+    
+    // Check for missing function name
+    /set_parse_error/"Expected function name after /"/tok when tok->type == TOK_SLASH or tok->type == TOK_DOT.
+    
     name := tok->value.
     line := tok->line.
     pos = pos + 1.
@@ -550,14 +715,26 @@
         
         pos = pos + 1. // Skip /
         
+        // Check for empty argument (// or /. or /)
+        next := /peek/tokens/pos.
+        // Use function call's line for error highlighting
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_SLASH.
+        >> when next->type == TOK_SLASH.
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_DOT.
+        >> when next->type == TOK_DOT.
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_EOF.
+        >> when next->type == TOK_EOF.
+        
         // Parse argument expression
         arg_res := /parse_primary/tokens/pos.
         /ds_list_push/args/arg_res->node.
         pos = arg_res->end.
     <
     
-    // Consume trailing .
+    // Check for trailing .
     dot := /peek/tokens/pos.
+    // Use function call's line for error highlighting
+    /set_parse_error_at_line/"Missing '.' after function call"/line when dot->type != TOK_DOT and dot->type != TOK_WHEN and dot->type != TOK_UNLESS.
     pos = pos + 1 when dot->type == TOK_DOT.
     
     << { node: /func_call/name/args/line, end: pos }.
@@ -569,6 +746,10 @@
 
     // Get function name
     tok := /peek/tokens/pos.
+    
+    // Check for missing function name
+    /set_parse_error/"Expected function name after /"/tok when tok->type == TOK_SLASH or tok->type == TOK_DOT.
+    
     name := tok->value.
     line := tok->line.
     pos = pos + 1.
@@ -580,6 +761,16 @@
         >> when tok->type != TOK_SLASH.
 
         pos = pos + 1. // Skip /
+
+        // Check for empty argument
+        next := /peek/tokens/pos.
+        // Use function call's line for error highlighting
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_SLASH.
+        >> when next->type == TOK_SLASH.
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_DOT.
+        >> when next->type == TOK_DOT.
+        /set_parse_error_at_line/"Empty argument in function call"/line when next->type == TOK_EOF.
+        >> when next->type == TOK_EOF.
 
         // Parse argument expression
         arg_res := /parse_primary/tokens/pos.
@@ -608,6 +799,15 @@
 #parse_stmt(tokens, pos) >
     tok := /peek/tokens/pos.
     
+    // Reject tokens that can't start a valid statement
+    // These are expression-only tokens that shouldn't appear at statement level
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_LBRACKET.
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_LBRACE.
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_RBRACKET.
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_RBRACE.
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_INT.
+    /set_parse_error/"Unexpected token in statement"/tok when tok->type == TOK_STRING.
+    
     res := tok->type | >
         TOK_LOOP => /parse_loop/tokens/pos
         TOK_FOR => /parse_for/tokens/pos
@@ -623,6 +823,7 @@
     
     // Check for trailing modifiers (works for blocks too now!)
     next := /peek/tokens/res->end.
+    
     << next->type | >
         TOK_WHEN => /parse_modifier/tokens/res/TOK_WHEN
         TOK_UNLESS => /parse_modifier/tokens/res/TOK_UNLESS
@@ -637,9 +838,14 @@
     loop >
         tok := /peek/tokens/pos.
         >> when tok->type == TOK_EOF.
+        // Exit on parse error
+        >> when parse_error == 1.
         
         res := /parse_stmt/tokens/pos.
         pos = res->end.
+        
+        // Exit if statement parsing set an error
+        >> when parse_error == 1.
         
         prog = (prog == 0) | >
             1 => res->node

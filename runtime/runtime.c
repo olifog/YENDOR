@@ -766,6 +766,20 @@ Value ds_is_list(Value val) {
   return VAL_INT(lists[id].in_use);
 }
 
+// Check if a value is a valid object handle
+Value ds_is_object(Value val) {
+  if (!IS_INT(val))
+    return VAL_INT(0);
+  long handle = AS_INT(val);
+  if ((handle & TYPE_MASK_OBJ) != TYPE_MASK_OBJ)
+    return VAL_INT(0);
+  long id = handle & ~TYPE_MASK_OBJ;
+
+  if (id <= 0 || id >= MAX_OBJECTS)
+    return VAL_INT(0);
+  return VAL_INT(objects[id].in_use);
+}
+
 // Convert a list to a string representation "[a, b, c]"
 // Handles nested lists recursively with depth limit
 // Helper for recursion

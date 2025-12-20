@@ -502,6 +502,7 @@ Value ds_list_push(Value list, Value value);
 Value ds_list_get(Value list, Value index);
 Value ds_list_len(Value list);
 Value ds_is_list(Value val);
+Value ds_is_object(Value val);
 Value ds_list_to_string(Value list);
 Value ds_json_encode(Value val);
 
