@@ -54,6 +54,13 @@ CHAT_MSG_GAP := 10.
 BUBBLE_SIZE := 50.
 BUBBLE_MARGIN := 20.
 
+// Message Queue System
+chat_queue_count := 0.
+chat_queue_sender := [].
+chat_queue_text := [].
+chat_queue_is_player := [].
+chat_queue_contact := [].
+
 // ============================================================================
 // Initialize Contacts
 // ============================================================================
@@ -184,6 +191,69 @@ BUBBLE_MARGIN := 20.
 <
 
 // ============================================================================
+// Queue Management
+// ============================================================================
+
+#enqueue_chat(contact, sender, text, is_player) >
+    idx := chat_queue_count.
+    chat_queue_contact[idx] = contact.
+    chat_queue_sender[idx] = sender.
+    chat_queue_text[idx] = text.
+    chat_queue_is_player[idx] = is_player.
+    
+    chat_queue_count = chat_queue_count + 1.
+    
+    // If this is the VERY first message in the queue and we aren't waiting for a click yet?
+    // Actually, design says "click to progress".
+    // If the chat is closed, we might want to auto-advance one so the notification appears?
+    // Or just mark "unread" immediately?
+    
+    // Mark unread immediately so bubble shows up
+    contact_unread[contact] = contact_unread[contact] + 1.
+    contact_has_msgs[contact] = 1.
+<
+
+#advance_chat_queue() >
+    <<0 when chat_queue_count == 0.
+    
+    // Get head
+    contact := chat_queue_contact[0].
+    sender := chat_queue_sender[0].
+    text := chat_queue_text[0].
+    is_player := chat_queue_is_player[0].
+    
+    // Add to real chat
+    /add_npc_message_to/contact/text when is_player == 0.
+    /add_player_message_to/contact/text when is_player == 1.
+    
+    // Play Click Sound
+    /play_sound_wrapper/SOUND_KEY_TYPE.
+    
+    // Shift queue
+    limit := chat_queue_count - 1.
+    for i in 0..limit >
+        next := i + 1.
+        chat_queue_contact[i] = chat_queue_contact[next].
+        chat_queue_sender[i] = chat_queue_sender[next].
+        chat_queue_text[i] = chat_queue_text[next].
+        chat_queue_is_player[i] = chat_queue_is_player[next].
+    <
+    
+    chat_queue_count = chat_queue_count - 1.
+    <<1.
+<
+
+#add_chat_separator(contact) >
+    // Add a visual gap/separator to the chat history
+    // We can use a special sender or text to render it
+    // For now, let's just use an empty space or a divider line
+    // Making it an NPC message with special text
+    
+    // NOTE: This adds directly to history, skipping queue
+    /add_npc_message_to/contact/"---".
+<
+
+// ============================================================================
 // Start Conversations (triggered by upgrades)
 // ============================================================================
 
@@ -217,10 +287,17 @@ BUBBLE_MARGIN := 20.
     chat_conv_id = 1.
     current_contact = CONTACT_MANAGEMENT.
     
-    /add_npc_message_to/CONTACT_MANAGEMENT/"Welcome to HackNet Enterprises!".
-    /add_npc_message_to/CONTACT_MANAGEMENT/"Congratulations on your first upgrade. Your bot is showing real promise.".
-    /add_npc_message_to/CONTACT_MANAGEMENT/"Keep up the good work.".
+    /add_chat_separator/CONTACT_MANAGEMENT.
+    
+    sender := contact_names[CONTACT_MANAGEMENT].
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"Welcome to HackNet Enterprises!"/0.
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"Congratulations on your first upgrade. Your bot is showing real promise."/0.
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"Keep up the good work."/0.
+    
     /set_response_options/"Thank you!"/"Happy to be here"/"".
+    
+    // Auto-advance first message so user sees something is happening
+    /advance_chat_queue/.
     
     /play_sound_wrapper/SOUND_NEW_MESSAGE.
     chat_active = 1.
@@ -243,10 +320,17 @@ BUBBLE_MARGIN := 20.
     chat_conv_id = 2.
     current_contact = CONTACT_DAVE.
     
-    /add_npc_message_to/CONTACT_DAVE/"Hey there, new hire!".
-    /add_npc_message_to/CONTACT_DAVE/"Quick tip: the difficulty upgrades give more gold per floor.".
-    /add_npc_message_to/CONTACT_DAVE/"More risk, more reward!".
+    /add_chat_separator/CONTACT_DAVE.
+    
+    sender := contact_names[CONTACT_DAVE].
+    /enqueue_chat/CONTACT_DAVE/sender/"Hey there, new hire!"/0.
+    /enqueue_chat/CONTACT_DAVE/sender/"Quick tip: the difficulty upgrades give more gold per floor."/0.
+    /enqueue_chat/CONTACT_DAVE/sender/"More risk, more reward!"/0.
+    
     /set_response_options/"Thanks for the tip!"/"Got it"/"".
+    
+    // Auto-advance first message
+    /advance_chat_queue/.
     
     /play_sound_wrapper/SOUND_NEW_MESSAGE.
     chat_active = 1.
@@ -269,10 +353,17 @@ BUBBLE_MARGIN := 20.
     chat_conv_id = 3.
     current_contact = CONTACT_MANAGEMENT.
     
-    /add_npc_message_to/CONTACT_MANAGEMENT/"Progress Report".
-    /add_npc_message_to/CONTACT_MANAGEMENT/"We've been monitoring your performance. Impressive numbers.".
-    /add_npc_message_to/CONTACT_MANAGEMENT/"The board is pleased. Continue developing your AI.".
+    /add_chat_separator/CONTACT_MANAGEMENT.
+    
+    sender := contact_names[CONTACT_MANAGEMENT].
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"Progress Report"/0.
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"We've been monitoring your performance. Impressive numbers."/0.
+    /enqueue_chat/CONTACT_MANAGEMENT/sender/"The board is pleased. Continue developing your AI."/0.
+    
     /set_response_options/"Understood"/"I will do my best"/"Whats next?".
+    
+    // Auto-advance first message
+    /advance_chat_queue/.
     
     /play_sound_wrapper/SOUND_NEW_MESSAGE.
     chat_active = 1.
@@ -344,6 +435,15 @@ BUBBLE_MARGIN := 20.
     
     <<0 when just_clicked == 0.
     
+    // If we have queued messages, any click inside the box advances the queue
+    >
+        clicked_in_box := mx ge chat_x and mx lt chat_x + CHAT_W and my ge chat_y and my lt chat_y + CHAT_H.
+        >
+            /advance_chat_queue/.
+            <<1.
+        < when clicked_in_box == 1.
+    < when chat_queue_count gt 0 and just_clicked == 1.
+    
     // Close button
     close_x := chat_x + CHAT_W - 30.
     close_y := chat_y + 8.
@@ -374,8 +474,8 @@ BUBBLE_MARGIN := 20.
     // Contact list clicks
     /update_contact_clicks/mx/my/chat_x/chat_y.
     
-    // Response button clicks
-    /update_chat_responses/mx/my/chat_x/chat_y when chat_has_responses == 1 and chat_responded == 0.
+    // Response button clicks - ONLY if queue is empty
+    /update_chat_responses/mx/my/chat_x/chat_y when chat_has_responses == 1 and chat_responded == 0 and chat_queue_count == 0.
     
     // If we got here, we are inside the box and handled whatever (or ignored dead space inside box)
     // but we should block underneath.
@@ -566,8 +666,31 @@ BUBBLE_MARGIN := 20.
     /draw_chat_messages/msg_x/msg_y/msg_w/msg_h when current_contact gt 0.
     /clear_clip_rect/.
     
-    // Response buttons - only show for the contact they belong to
-    /draw_chat_responses/cx/cy when chat_has_responses == 1 and chat_responded == 0 and current_contact == chat_resp_contact.
+    // Response buttons - only show for the contact they belong to AND queue empty
+    /draw_chat_responses/cx/cy when chat_has_responses == 1 and chat_responded == 0 and current_contact == chat_resp_contact and chat_queue_count == 0.
+    
+    // "Next" indicator when queue has items
+    >
+        next_x := cx + CHAT_W - 90.
+        next_y := cy + CHAT_H - 40.
+        next_w := 80.
+        next_h := 28.
+        
+        // Simple blink
+        blink := chat_anim_timer / 500.
+        blink = blink % 2.
+        
+        // Player bubble color: 50, 80, 120
+        // Blink alpha? Or intensity?
+        // Let's toggle intensity
+        r := 50. g := 80. b := 120.
+        r = 70 when blink == 1. g = 100 when blink == 1. b = 140 when blink == 1.
+        
+        /draw_rect/next_x/next_y/next_w/next_h/r/g/b/255.
+        
+        // Player text color: 220, 230, 255
+        /text_draw/(next_x + 10)/(next_y + 8)/14/220/230/255/"Next >>".
+    < when chat_queue_count gt 0.
 <
 
 #draw_contacts_list(cx, cy) >
@@ -692,6 +815,18 @@ BUBBLE_MARGIN := 20.
 <
 
 #draw_chat_bubble_msg(cx, y, sender, text, is_player, max_w, chars_per_line) >
+    // Special separator handling
+    is_sep := text == "---".
+    >
+        // Draw centered line/text
+        sep_y := y + 15.
+        /draw_rect/(cx + 20)/sep_y/(max_w - 40)/1/50/60/80/255.
+        /text_draw/(cx + max_w / 2 - 40)/(sep_y - 6)/12/70/90/110/"NEW SESSION".
+        
+        // Return early (don't draw bubble)
+        <<0.
+    < when is_sep == 1.
+
     wrapped_lines := /count_wrapped_lines/text/chars_per_line.
     
     >
