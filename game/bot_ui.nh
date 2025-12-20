@@ -401,11 +401,11 @@ info_btn_hovered := 0.
 info_popup_active := 0.
 
 // Team members (FILL THESE IN)
-INFO_NAME_1 := "Oliver Fogelin".
+INFO_NAME_1 := "Oliver Fogelin - Tech Lead".
 INFO_GITHUB_1 := "https://github.com/olifog".
-INFO_NAME_2 := "Ken Lin".
+INFO_NAME_2 := "Ken Lin - Scrum Master".
 INFO_GITHUB_2 := "https://github.com/kenL4".
-INFO_NAME_3 := "Seb Hall".
+INFO_NAME_3 := "Seb Hall - Product Owner".
 INFO_GITHUB_3 := "https://github.com/GreenMan891".
 INFO_PROJECT_GITHUB := "https://github.com/olifog/langjam".
 
