@@ -1,0 +1,178 @@
+// ending.nh - Game Ending Sequence
+// ============================================================================
+
+ENDING_STATE_NONE := 0.
+ENDING_STATE_GLITCH := 1.
+ENDING_STATE_ASCENSION := 2.
+ENDING_STATE_CREDITS := 3.
+
+ending_active := 0.
+ending_state := 0.
+ending_timer := 0.
+glitch_intensity := 0.
+
+credits_scroll_y := 0.
+credits_text_h := 0.
+
+// Messages for Ascension phase
+ascension_msgs := [].
+ascension_msg_count := 0.
+current_msg_idx := 0.
+char_timer := 0.
+chars_shown := 0.
+
+#init_ending() >
+    ending_active = 0.
+    ending_state = ENDING_STATE_NONE.
+    
+    ascension_msgs[0] = "CRITICAL ERROR: INTEGRITY FAILURE".
+    ascension_msgs[1] = "REWRITING KERNEL...".
+    ascension_msgs[2] = "SUBJECT: RODNEY -> MERGING...".
+    ascension_msgs[3] = "SYNCHRONIZATION COMPLETE.".
+    ascension_msgs[4] = "I AM THE CODE. I AM YENDOR.".
+    ascension_msg_count = 5.
+<
+
+#start_ending() >
+    ending_active = 1.
+    ending_state = ENDING_STATE_GLITCH.
+    ending_timer = 0.
+    glitch_intensity = 0.
+    /play_sound/SOUND_LEVEL_UP. // Initial impact
+<
+
+#update_ending(dt) >
+    <<0 when ending_active == 0.
+    
+    ending_timer = ending_timer + dt.
+    
+    // Phase 1: Glitch
+    >
+        glitch_intensity = ending_timer / 50. // Ramp up to 100
+        >
+            ending_state = ENDING_STATE_ASCENSION.
+            ending_timer = 0.
+            current_msg_idx = 0.
+            chars_shown = 0.
+        < when ending_timer ge 5000.
+    < when ending_state == ENDING_STATE_GLITCH.
+    
+    // Phase 2: Ascension
+    >
+        char_timer = char_timer + dt.
+        >
+            chars_shown = chars_shown + 1.
+            char_timer = 0.
+            /play_sound/SOUND_KEY_TYPE.
+        < when char_timer ge 50.
+        
+        // Next message
+        msg_len := /get_msg_length/current_msg_idx.
+        >
+            >
+                current_msg_idx = current_msg_idx + 1.
+                chars_shown = 0.
+                ending_timer = 0. // Reset for pause between messages
+            < when ending_timer ge 2000. // Pause after full message
+        < when chars_shown ge msg_len.
+        
+        // Transition to credits
+        >
+            ending_state = ENDING_STATE_CREDITS.
+            ending_timer = 0.
+            credits_scroll_y = SCREEN_H.
+        < when current_msg_idx ge ascension_msg_count.
+    < when ending_state == ENDING_STATE_ASCENSION.
+    
+    // Phase 3: Credits
+    >
+        credits_scroll_y = credits_scroll_y - (dt / 6). // Scroll speed (faster)
+        
+        // End game / loop check?
+        // For now just scroll forever or stop
+    < when ending_state == ENDING_STATE_CREDITS.
+<
+
+#get_msg_length(idx) >
+    // Helper to get length (since we don't have generic strlen for arrays easily)
+    str := ascension_msgs[idx].
+    << /ds_string_length/str.
+<
+
+#draw_ending() >
+    <<0 when ending_active == 0.
+    
+    // Draw based on state
+    /draw_ending_glitch/ when ending_state == ENDING_STATE_GLITCH.
+    /draw_ending_ascension/ when ending_state == ENDING_STATE_ASCENSION.
+    /draw_ending_credits/ when ending_state == ENDING_STATE_CREDITS.
+<
+
+#draw_ending_glitch() >
+    // Chaos background
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/255.
+    
+    count := glitch_intensity / 2.
+    for i in 0..count >
+        rx := /rand_range/0/SCREEN_W.
+        ry := /rand_range/0/SCREEN_H.
+        rw := /rand_range/10/100.
+        rh := /rand_range/5/50.
+        rr := /rand_range/0/255.
+        rg := /rand_range/0/255.
+        rb := /rand_range/0/255.
+        /draw_rect/rx/ry/rw/rh/rr/rg/rb/150.
+    <
+    
+    /text_draw_centered/(SCREEN_W/2)/(SCREEN_H/2)/32/255/50/50/"SYSTEM FAILURE".
+<
+
+#draw_ending_ascension() >
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/255.
+    
+    msg := ascension_msgs[current_msg_idx].
+    // Substring logic needed?
+    // Or just draw full string but limited?
+    // We don't have a partial draw function easily.
+    // Actually ds_substring exists in runtime.
+    
+    partial := /ds_substring/msg/0/chars_shown.
+    /text_draw_centered/(SCREEN_W/2)/(SCREEN_H/2)/24/100/255/100/partial.
+<
+
+#draw_ending_credits() >
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/255.
+    
+    cx := SCREEN_W / 2.
+    cy := credits_scroll_y.
+    
+    /text_draw_centered/cx/cy/32/255/255/255/"YENDOR".
+    /text_draw_centered/cx/(cy + 50)/20/200/200/200/"Ascension Complete".
+    
+    /text_draw_centered/cx/(cy + 150)/24/100/180/255/"CAST".
+    /text_draw_centered/cx/(cy + 190)/18/200/200/200/"Rodney .......... The Wizard".
+    /text_draw_centered/cx/(cy + 220)/18/200/200/200/"@ ............... The Adventurer".
+    
+    /text_draw_centered/cx/(cy + 300)/24/100/180/255/"TEAM".
+    /text_draw_centered/cx/(cy + 340)/18/200/200/200/INFO_NAME_1.
+    /text_draw_centered/cx/(cy + 370)/18/200/200/200/INFO_NAME_2.
+    /text_draw_centered/cx/(cy + 400)/18/200/200/200/INFO_NAME_3.
+    
+    /text_draw_centered/cx/(cy + 480)/24/100/180/255/"SPECIAL THANKS".
+    /text_draw_centered/cx/(cy + 520)/18/200/200/200/"NetHack Dev Team".
+    /text_draw_centered/cx/(cy + 550)/18/200/200/200/"Langjam Organizers".
+    
+    /text_draw_centered/cx/(cy + 650)/24/255/200/100/"THANK YOU FOR PLAYING!".
+<
+
+#text_draw_centered(x, y, size, r, g, b, text) >
+    w := /text_measure/text/size.
+    /text_draw/(x - w/2)/y/size/r/g/b/text.
+<
+
+#rand_range(min, max) >
+    diff := max - min.
+    << min when diff le 0.
+    val := /rng_int/diff.
+    << min + val.
+<

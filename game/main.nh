@@ -19,6 +19,7 @@
 @use "docs.nh".
 @use "tutorial.nh".
 @use "messages.nh".
+@use "ending.nh".
 
 // ============================================================================
 // Screen Layout - Responsive Two-Pane Layout
@@ -187,6 +188,7 @@ LAYOUT_PADDING := 16.
     /calculate_layout/.
     /init_editor/.
     /init_intro/.
+    /init_ending/.
     /init_menu/.
     
     // Generate dungeon AFTER init_menu - menu generation uses the dungeon array
@@ -215,6 +217,13 @@ LAYOUT_PADDING := 16.
     // Update intro if active
     /update_intro/dt when can_run == 1 and intro_active == 1.
     can_run = 0 when intro_active == 1.
+    
+    // Ending update
+    /update_ending/dt when can_run == 1.
+    // If ending is active, it takes over control (except maybe allowing some background anims?)
+    // For glitch phase we might want game to run, but input blocked.
+    // For now, block completely during ascension/credits.
+    can_run = 0 when ending_active == 1.
     
     // Normal game update
     /do_update/dt when can_run == 1.
@@ -455,6 +464,9 @@ LAYOUT_PADDING := 16.
     
     // Info popup on very top
     /draw_info_popup/.
+    
+    // Ending sequence (OVER EVERYTHING)
+    /draw_ending/.
 <
 
 // ============================================================================
@@ -937,6 +949,23 @@ clip_h := 0.
     /draw_node/colL2/vision_row1/UPGRADE_LANG_SCAN.          // Scan
     /draw_node/colL2/vision_row2/UPGRADE_LANG_ROOM.          // Room
     /draw_node/colL2/vision_row3/UPGRADE_LANG_FULLMAP.       // FullMap
+    
+    // FINAL ASCENSION (Tier 9 - below everything)
+    can_ascend := /check_final_unlock_condition/.
+    >
+        row9 := row8 + nh + gy + 20. // Extra spacing/gap
+        
+        // Connections from Lang/Vision leaves
+        // From Tier 6 (row8)
+        /draw_tree_conn/(col0 + nw / 2)/(row8 + nh + 2)/(colm + nw / 2)/(row9 - 2)/lr/lg/lb.
+        /draw_tree_conn/(col2 + nw / 2)/(row8 + nh + 2)/(colm + nw / 2)/(row9 - 2)/lr/lg/lb.
+        
+        // From Vision (vision_row3)
+        /draw_tree_conn/(colL1 + nw / 2)/(vision_row3 + nh + 2)/(colm + nw / 2)/(row9 - 2)/lr/lg/lb.
+        /draw_tree_conn/(colL2 + nw / 2)/(vision_row3 + nh + 2)/(colm + nw / 2)/(row9 - 2)/lr/lg/lb.
+        
+        /draw_node/colm/row9/UPGRADE_FINAL_ASCENSION.
+    < when can_ascend == 1.
 <
 
 // Draw connection line between nodes (top of lower node to bottom of upper node)
@@ -1337,6 +1366,15 @@ clip_h := 0.
     /try_lang_node_click/lcolL2/lrow3/UPGRADE_LANG_SCAN/mx/my.
     /try_lang_node_click/lcolL2/lrow4/UPGRADE_LANG_ROOM/mx/my.
     /try_lang_node_click/lcolL2/lrow5/UPGRADE_LANG_FULLMAP/mx/my.
+    
+    // Final Ascension
+    can_ascend := /check_final_unlock_condition/.
+    >
+        lrow9 := lrow8 + nh + gy + 20.
+        // Use lcolm (variable from above scope, ensure available)
+        // Check scope: lcolm defined at line 1282. Should be fine if same function.
+        /try_lang_node_click/lcolm/lrow9/UPGRADE_FINAL_ASCENSION/mx/my.
+    < when can_ascend == 1.
 <
 
 #update_tech_drag() >

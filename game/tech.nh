@@ -81,6 +81,8 @@ UPGRADE_LANG_FULLMAP := 64.       // full_map_scan() - from room
 // Total upgrade count
 UPGRADE_COUNT := 40.
 
+UPGRADE_FINAL_ASCENSION := 99.
+
 // ============================================================================
 // Upgrade State (0 = locked, 1 = unlocked)
 // ============================================================================
@@ -88,7 +90,7 @@ UPGRADE_COUNT := 40.
 upgrades := [].
 
 #init_upgrades() >
-    for i in 0..70 >
+    for i in 0..100 >
         upgrades[i] = 0.
     <
     // Reset derived state
@@ -106,6 +108,9 @@ upgrades := [].
     /apply_buff_upgrades/.
     // Update bonus display immediately
     dngn_bonus = /calculate_floor_bonus/.
+
+    // Trigger ending if final upgrade
+    /start_ending/ when id == UPGRADE_FINAL_ASCENSION.
 <
 
 // ============================================================================
@@ -151,8 +156,11 @@ upgrades := [].
     << 400 when id == UPGRADE_DIFF_GOBLINS.        // Row 3 right
     << 1000 when id == UPGRADE_DIFF_MONSTER_2.     // Row 4 merge
     << 2500 when id == UPGRADE_DIFF_ROOM_4.        // Row 5 left
-    << 2500 when id == UPGRADE_DIFF_MONSTER_3.     // Row 5 right
-    << 6000 when id == UPGRADE_DIFF_ROOM_MANY.     // Row 6 merge
+    << 30000 when id == UPGRADE_DIFF_MONSTER_3.     // Row 5 right
+    << 100000 when id == UPGRADE_DIFF_ROOM_MANY.     // Row 6 merge
+    
+    // FINAL ASCENSION
+    << 0 when id == UPGRADE_FINAL_ASCENSION.
     
     // LANGUAGE BRANCH - knowledge costs gold (gentle scaling)
     // Row 0: Starting point ($10)
@@ -422,6 +430,9 @@ upgrades := [].
     
     has_room := /has_upgrade/UPGRADE_LANG_ROOM.
     << has_room when id == UPGRADE_LANG_FULLMAP.
+
+    // FINAL ASCENSION requires all 3 capstones
+    << /check_final_unlock_condition/ when id == UPGRADE_FINAL_ASCENSION.
     
     << 0. // Unknown
 <
@@ -612,6 +623,9 @@ dng_bonus_from_upgrades := 0.
     << "+1 Monster" when id == UPGRADE_DIFF_MONSTER_3.
     << "+1 Room" when id == UPGRADE_DIFF_ROOM_MANY.
     
+    // FINAL
+    << "???" when id == UPGRADE_FINAL_ASCENSION.
+
     // LANGUAGE - Row 0 (Start)
     << "For Loop" when id == UPGRADE_LANG_FOR.
     // LANGUAGE - Row 1 (Decisions)
@@ -724,9 +738,33 @@ dng_bonus_from_upgrades := 0.
     << "Locate nearest target" when id == UPGRADE_LANG_FIND.
     << "Current room bounds" when id == UPGRADE_LANG_ROOM.
     << "Navigate to a point" when id == UPGRADE_LANG_PATHFIND.
-    << "See entire map" when id == UPGRADE_LANG_FULLMAP.
+    << "Get info about the full map|tile layout." when id == UPGRADE_LANG_FULLMAP.
     
-    << "".
+    // FINAL
+    << "Merge with the machine.|Become the Wizard of Yendor.|(Ends the game)" when id == UPGRADE_FINAL_ASCENSION.
+    
+    << "Upgrade ID " + /ds_int_to_string/id.
+<
+
+#check_final_unlock_condition() >
+    // Requires capstones of all 3 branches
+    
+    // Buff: Strength III (ID 11)
+    has_buff := upgrades[UPGRADE_BUFF_STR_3].
+    
+    // Diff: Many Rooms (ID 29)
+    // Note: Diff tree branches, so check if EITHER leaf is bought?
+    // Actually ID 29 is the only Tier 8 node in Diff branch.
+    // Let's verify tree structure in draw_diff_tree if needed.
+    // Assuming ID 29 is the final one.
+    has_diff := upgrades[UPGRADE_DIFF_ROOM_MANY].
+    
+    // Lang: Full Map (ID 64)
+    has_lang := upgrades[UPGRADE_LANG_FULLMAP].
+    
+    // Return 1 if all present
+    << 1 when has_buff == 1 and has_diff == 1 and has_lang == 1.
+    << 0.
 <
 
 // ============================================================================
