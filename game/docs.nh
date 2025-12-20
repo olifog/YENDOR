@@ -11,6 +11,7 @@ docs_copy_hovered := 0.
 
 // Scroll & Search state
 docs_scroll_y := 0.
+docs_scroll_list_y := 0.
 docs_search_query := "".
 docs_search_active := 0.
 docs_search_cursor := 0.
@@ -18,6 +19,7 @@ docs_search_cursor := 0.
 docs_btn_copy_rect_x := -1.
 docs_btn_copy_rect_y := -1.
 docs_max_scroll := 0.
+docs_max_scroll_list := 0.
 
 // Layout constants
 DOCS_X := 100.
@@ -101,10 +103,17 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
     list_y := DOCS_Y + 80. // Moved down for search bar
     list_w := DOCS_LIST_W - 40.
     
+    // Bounds check for list area (clipping)
+    clip_y := list_y.
+    clip_h := DOCS_H - 90.
+    
+    in_list_area := mx ge list_x and mx lt list_x + list_w and my ge clip_y and my lt clip_y + clip_h.
+    << 0 when in_list_area == 0.
+    
     item_h := 30.
     
     // Iterate through all possible language upgrades (40-69)
-    y := list_y.
+    y := list_y - docs_scroll_list_y.
 
     // --- Special Case: Basics (ID 99) ---
     >
@@ -211,10 +220,31 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
     
     // Handle Scrolling (Mouse Wheel)
     scroll := /input_scroll_delta/ * 30.
-    docs_scroll_y = docs_scroll_y - scroll when scroll != 0.
-    /input_scroll_clear/.
-    docs_scroll_y = 0 when docs_scroll_y lt 0.
-    docs_scroll_y = docs_max_scroll when docs_scroll_y gt docs_max_scroll and docs_max_scroll gt 0.
+    >
+        // Check where mouse is
+        list_x := DOCS_X + 20.
+        list_y := DOCS_Y + 80.
+        list_w := DOCS_LIST_W - 40.
+        list_h := DOCS_H - 90.
+        
+        in_list := mx ge list_x and mx lt list_x + list_w and my ge list_y and my lt list_y + list_h.
+        
+        >
+            docs_scroll_list_y = docs_scroll_list_y + scroll.
+            
+            docs_scroll_list_y = 0 when docs_scroll_list_y lt 0.
+            docs_scroll_list_y = docs_max_scroll_list when docs_scroll_list_y gt docs_max_scroll_list.
+        < when in_list == 1.
+        
+        >
+            docs_scroll_y = docs_scroll_y + scroll.
+            
+            docs_scroll_y = 0 when docs_scroll_y lt 0.
+            docs_scroll_y = docs_max_scroll when docs_scroll_y gt docs_max_scroll.
+        < when in_list == 0.
+        
+        /input_scroll_clear/.
+    < when scroll != 0.
     // Max scroll clamping done in render because we need content height
     
     // Check close button or click outside
@@ -252,9 +282,14 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
 #draw_docs_list() >
     list_x := DOCS_X + 20.
     list_y := DOCS_Y + 80.
+    list_w := DOCS_LIST_W - 40.
+    list_h := DOCS_H - 90.
+    
+    /set_clip_rect/list_x/list_y/list_w/list_h.
+    
     item_h := 30.
     
-    y := list_y.
+    y := list_y - docs_scroll_list_y.
 
     // --- Special Case: Basics (ID 99) ---
     >
@@ -304,6 +339,39 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
             < when match == 1.
         < when has == 1.
     <
+    
+    // Update List Max Scroll
+    total_h := y - (list_y - docs_scroll_list_y).
+    max_scroll := total_h - list_h.
+    max_scroll = 0 when max_scroll lt 0.
+    docs_max_scroll_list = max_scroll.
+    docs_scroll_list_y = max_scroll when docs_scroll_list_y gt max_scroll. // Clamp active
+    
+    /clear_clip_rect/.
+    
+    // Draw List Scrollbar
+    >
+        track_h := list_h.
+        track_y := list_y.
+        track_x := list_x + list_w - 6.
+        
+        visible_ratio := track_h * 100 / total_h.
+        visible_ratio = 100 when visible_ratio gt 100.
+        
+        thumb_h := track_h * visible_ratio / 100.
+        thumb_h = 20 when thumb_h lt 20.
+        
+        range := track_h - thumb_h.
+        scroll_ratio := 0.
+        scroll_ratio = docs_scroll_list_y * 100 / max_scroll when max_scroll gt 0.
+        
+        thumb_y := track_y + range * scroll_ratio / 100.
+        
+        // Track
+        /draw_rect/track_x/track_y/4/track_h/30/35/40/255.
+        // Thumb
+        /draw_rect/track_x/thumb_y/4/thumb_h/80/90/100/255.
+    < when total_h gt list_h.
 <
 
 #draw_docs_content(divider_x) >
@@ -500,6 +568,7 @@ DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
     
     // Reset state on open
     docs_scroll_y = 0.
+    docs_scroll_list_y = 0.
     docs_search_query = "".
     docs_search_active = 0.
     
