@@ -22,6 +22,7 @@ chat_sender := [].       // Sender name
 chat_text := [].         // Message text (| for line breaks)
 chat_is_player := [].    // 1 = player message, 0 = NPC message
 chat_counts := [].       // Message count per contact
+chat_heights := [].      // Total height of messages per contact
 
 // Pending response options (for current conversation state)
 chat_resp_1 := "".
@@ -64,6 +65,7 @@ BUBBLE_MARGIN := 20.
         contact_has_msgs[i] = 0.
         contact_unread[i] = 0.
         chat_counts[i] = 0.
+        chat_heights[i] = 0.
     <
     
     // Then set contact names
@@ -88,6 +90,11 @@ BUBBLE_MARGIN := 20.
     contact_has_msgs[contact_id] = 1.
     contact_unread[contact_id] = contact_unread[contact_id] + 1.
     chat_count = chat_count + 1.
+    
+    // Track height
+    wrapped := /count_wrapped_lines/text/50.
+    h := wrapped * 18 + 28 + CHAT_MSG_GAP.
+    chat_heights[contact_id] = chat_heights[contact_id] + h.
 <
 
 #add_player_message_to(contact_id, text) >
@@ -100,6 +107,11 @@ BUBBLE_MARGIN := 20.
     
     chat_counts[contact_id] = count + 1.
     chat_count = chat_count + 1.
+
+    // Track height
+    wrapped := /count_wrapped_lines/text/50.
+    h := wrapped * 18 + 14 + CHAT_MSG_GAP.
+    chat_heights[contact_id] = chat_heights[contact_id] + h.
 <
 
 // Legacy wrappers (use current contact from conversation)
@@ -317,7 +329,16 @@ BUBBLE_MARGIN := 20.
     scroll := /input_scroll_delta/ * 30.
     >
         chat_scroll = chat_scroll - scroll.
+        
+        // Clamp scroll
+        view_h := CHAT_H - 100.
+        total_h := chat_heights[current_contact].
+        max_scroll := total_h - view_h + 50. // +50 for padding
+        max_scroll = 0 when max_scroll lt 0.
+        
         chat_scroll = 0 when chat_scroll lt 0.
+        chat_scroll = max_scroll when chat_scroll gt max_scroll.
+        
         /input_scroll_clear/.
     < when scroll != 0.
     
@@ -629,14 +650,14 @@ BUBBLE_MARGIN := 20.
         
         y = y - bubble_h - CHAT_MSG_GAP.
         
-        // Skip if outside visible area  
+        // If below visible area, skip but continue (older messages are above)
         >
             i = i - 1.
             ><.
-        < when y + bubble_h lt msg_y - 50.
+        < when y gt msg_y + msg_h + 50.
         
-        // Break if above visible area (all remaining messages are above)
-        >>when y gt msg_y + msg_h + 50.
+        // If above visible area, stop (all older messages are even higher)
+        >> when y + bubble_h lt msg_y - 50.
         
         /draw_chat_bubble_msg/msg_x/y/sender/text/is_player/max_bubble_w/chars_per_line.
         processed = processed + 1.

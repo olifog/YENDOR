@@ -382,6 +382,7 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     // Reset player stats for new game
     player_hp = player_max_hp.
     player_gold = 0.
+    player_bank = 0.
     dungeon_level = 1.
     player_xp_points = 0.
     player_xp_level = 1.
@@ -397,6 +398,7 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     ui_tut_has_shown = 0.  // Reset so tutorial shows on each new game
     
     // Fully initialize intro state (clears old state from previous plays)
+    /init_editor/.
     /init_intro/.
 <
 

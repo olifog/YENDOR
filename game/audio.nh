@@ -54,6 +54,12 @@ SOUND_NEW_MESSAGE := 17.
         upg = /ds_string_concat/upg/comma when i lt 69.
     <
     
+    // Append bank balance with separator
+    sep := "|".
+    bank_str := /ds_int_to_string/player_bank.
+    upg = /ds_string_concat/upg/sep.
+    upg = /ds_string_concat/upg/bank_str.
+    
     /js_call_save_game/slot/code/upg.
 <
 
@@ -110,7 +116,49 @@ SOUND_NEW_MESSAGE := 17.
         upgrades[upg_idx] = 1 when is_one == 1.
         upgrades[upg_idx] = 0 when is_zero == 1.
         upg_idx = upg_idx + 1 when is_one == 1 or is_zero == 1.
+        
+        // Stop upgrade parsing if we hit separator '|' (ASCII 124)
+        is_sep := c == 124.
+        >> when is_sep == 1.
     <
+    
+    // Restore bank balance (parse integer after '|')
+    // Find separator position
+    sep_pos := -1.
+    for i in 0..upg_len >
+        c := /ds_string_at/upg/i.
+        sep_pos = i when c == 124.
+        >> when sep_pos != -1.
+    <
+    
+    // Default bank to 0 if not found
+    player_bank = 0.
+    
+    // Parse integer if separator found
+    // format: ...|1234
+    bank_val := 0.
+    start_pos := sep_pos + 1.
+    
+    loop when sep_pos != -1 and start_pos lt upg_len >
+        c := /ds_string_at/upg/start_pos.
+        
+        // Is digit? (48-57)
+        is_digit := 0.
+        is_digit = 1 when c ge 48 and c le 57.
+        
+        digit := c - 48.
+        
+        // Accumulate: val = val * 10 + digit
+        bank_val = bank_val * 10 + digit when is_digit == 1.
+        
+        start_pos = start_pos + 1.
+        
+        // simple break if not digit (safety)
+        >> when is_digit == 0.
+    <
+    
+    player_bank = bank_val when sep_pos != -1.
+
     
     // Recalculate game state based on restored upgrades
     /recalc_dungeon_params/.

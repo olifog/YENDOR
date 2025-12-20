@@ -91,6 +91,9 @@ upgrades := [].
     for i in 0..70 >
         upgrades[i] = 0.
     <
+    // Reset derived state
+    /recalc_dungeon_params/.
+    /apply_buff_upgrades/.
 <
 
 #has_upgrade(id) >
