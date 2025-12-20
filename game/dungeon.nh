@@ -23,7 +23,7 @@ TILE_GOLD := 7.
 dungeon := [].
 
 // ============================================================================
-// Room Storage (for organic generation)
+// Room Storage
 // ============================================================================
 
 // Room data: each room has x, y, w, h, center_x, center_y
@@ -34,14 +34,6 @@ room_h := [].
 room_cx := [].
 room_cy := [].
 room_count := 0.
-
-// Expansion points: walls that can grow corridors
-expand_x := [].
-expand_y := [].
-expand_dir := [].  // 0=right, 1=left, 2=down, 3=up
-expand_room := []. // Which room this expansion point belongs to
-expand_count := 0.
-expand_used := []. // 1 if this expansion point has been tried
 
 // ============================================================================
 // Dungeon Access
@@ -66,26 +58,6 @@ expand_used := []. // 1 if this expansion point has been tried
 <
 
 // ============================================================================
-// Direction Helpers
-// ============================================================================
-
-#get_delta_x(dir) >
-    ret := 0.
-    ret = 1 when dir == 0.      // Right
-    ret = 0 - 1 when dir == 1.  // Left
-    // Up/Down are x=0
-    << ret.
-<
-
-#get_delta_y(dir) >
-    ret := 0.
-    ret = 1 when dir == 2.      // Down
-    ret = 0 - 1 when dir == 3.  // Up
-    // Right/Left are y=0
-    << ret.
-<
-
-// ============================================================================
 // Room Drawing
 // ============================================================================
 
@@ -97,16 +69,20 @@ expand_used := []. // 1 if this expansion point has been tried
         <
     <
     
-    // Draw horizontal walls
+    // Draw horizontal walls (only on empty tiles)
     for dx in 0..rw >
-        /set_tile/(rx + dx)/ry/TILE_WALL_H.
-        /set_tile/(rx + dx)/(ry + rh - 1)/TILE_WALL_H.
+        t1 := /get_tile/(rx + dx)/ry.
+        /set_tile/(rx + dx)/ry/TILE_WALL_H when t1 == TILE_EMPTY.
+        t2 := /get_tile/(rx + dx)/(ry + rh - 1).
+        /set_tile/(rx + dx)/(ry + rh - 1)/TILE_WALL_H when t2 == TILE_EMPTY.
     <
     
-    // Draw vertical walls
+    // Draw vertical walls (only on empty tiles)
     for dy in 1..(rh - 1) >
-        /set_tile/rx/(ry + dy)/TILE_WALL_V.
-        /set_tile/(rx + rw - 1)/(ry + dy)/TILE_WALL_V.
+        t1 := /get_tile/rx/(ry + dy).
+        /set_tile/rx/(ry + dy)/TILE_WALL_V when t1 == TILE_EMPTY.
+        t2 := /get_tile/(rx + rw - 1)/(ry + dy).
+        /set_tile/(rx + rw - 1)/(ry + dy)/TILE_WALL_V when t2 == TILE_EMPTY.
     <
 <
 
@@ -114,295 +90,613 @@ expand_used := []. // 1 if this expansion point has been tried
 // Overlap Detection
 // ============================================================================
 
-#check_area_clear(rx, ry, rw, rh) >
-    // Check if area is all empty (with 1 tile padding)
-    px := rx - 1.
-    py := ry - 1.
-    pw := rw + 2.
-    ph := rh + 2.
-    
-    for dy in 0..ph >
-        for dx in 0..pw >
-            cx := px + dx.
-            cy := py + dy.
-            
-            // Allow out of bounds (counts as clear)
-            in_bounds := 1.
-            in_bounds = 0 when cx lt 0.
-            in_bounds = 0 when cy lt 0.
-            in_bounds = 0 when cx ge MAP_WIDTH.
-            in_bounds = 0 when cy ge MAP_HEIGHT.
-            
-            tile := TILE_EMPTY.
-            tile = /get_tile/cx/cy when in_bounds == 1.
-            
-            << 0 when tile != TILE_EMPTY.
-        <
+#check_room_overlap(rx, ry, rw, rh) >
+    // Check if room overlaps any existing room (with 1 tile padding)
+    for i in 0..room_count >
+        ox := room_x[i].
+        oy := room_y[i].
+        ow := room_w[i].
+        oh := room_h[i].
+        
+        // Check overlap with padding
+        left1 := rx - 1.
+        right1 := rx + rw + 1.
+        top1 := ry - 1.
+        bottom1 := ry + rh + 1.
+        
+        left2 := ox.
+        right2 := ox + ow.
+        top2 := oy.
+        bottom2 := oy + oh.
+        
+        // Overlap if rectangles intersect
+        no_overlap := 0.
+        no_overlap = 1 when right1 le left2.
+        no_overlap = 1 when left1 ge right2.
+        no_overlap = 1 when bottom1 le top2.
+        no_overlap = 1 when top1 ge bottom2.
+        
+        << 1 when no_overlap == 0. // Overlap detected
     <
-    << 1.
+    << 0. // No overlap
 <
 
 // ============================================================================
-// Expansion Point Management
+// Drunken Walk Corridor Drawing (NetHack-style)
 // ============================================================================
 
-#add_expansion_points(room_idx, rx, ry, rw, rh) >
-    // Add each wall midpoint as potential expansion
-    
-    // Right wall (dir = 0)
-    expand_x[expand_count] = rx + rw - 1.
-    expand_y[expand_count] = ry + rh / 2.
-    expand_dir[expand_count] = 0.
-    expand_room[expand_count] = room_idx.
-    expand_used[expand_count] = 0.
-    expand_count = expand_count + 1.
-    
-    // Left wall (dir = 1)
-    expand_x[expand_count] = rx.
-    expand_y[expand_count] = ry + rh / 2.
-    expand_dir[expand_count] = 1.
-    expand_room[expand_count] = room_idx.
-    expand_used[expand_count] = 0.
-    expand_count = expand_count + 1.
-    
-    // Bottom wall (dir = 2)
-    expand_x[expand_count] = rx + rw / 2.
-    expand_y[expand_count] = ry + rh - 1.
-    expand_dir[expand_count] = 2.
-    expand_room[expand_count] = room_idx.
-    expand_used[expand_count] = 0.
-    expand_count = expand_count + 1.
-    
-    // Top wall (dir = 3)
-    expand_x[expand_count] = rx + rw / 2.
-    expand_y[expand_count] = ry.
-    expand_dir[expand_count] = 3.
-    expand_room[expand_count] = room_idx.
-    expand_used[expand_count] = 0.
-    expand_count = expand_count + 1.
+#is_wall_tile(tile) >
+    << 1 when tile == TILE_WALL_H.
+    << 1 when tile == TILE_WALL_V.
+    << 0.
 <
 
-#pick_unused_expansion() >
-    // Pick a random unused expansion point
-    // Returns index or -1 if none available
-    
-    // Count unused
-    unused_count := 0.
-    for i in 0..expand_count >
-        used := expand_used[i].
-        unused_count = unused_count + 1 when used == 0.
-    <
-    
-    << -1 when unused_count == 0.
-    
-    // Pick random unused
-    pick := /rng_int/unused_count.
-    current := 0.
-    
-    for i in 0..expand_count >
-        used := expand_used[i].
-        is_unused := 0.
-        is_unused = 1 when used == 0.
-        
-        is_pick := 0.
-        is_pick = 1 when current == pick.
-        
-        found := is_unused * is_pick.
-        << i when found == 1.
-        
-        current = current + 1 when is_unused == 1.
-    <
-    
-    << -1.
+#can_place_corridor(x, y) >
+    // Check if we can place a corridor tile here
+    tile := /get_tile/x/y.
+    << 1 when tile == TILE_EMPTY.
+    << 1 when tile == TILE_CORRIDOR. // Can overlap existing corridors
+    << 0.
 <
 
-// ============================================================================
-// Corridor Digging
-// ============================================================================
+#force_door_if_wall(x, y) >
+    // If tile at x,y is a wall, turn it into a door
+    // Check bounds first  
+    << 0 when x lt 0.
+    << 0 when y lt 0.
+    << 0 when x ge MAP_WIDTH.
+    << 0 when y ge MAP_HEIGHT.
+    
+    tile := /get_tile/x/y.
+    << 0 when /is_wall_tile/tile == 0. // Not a wall, nothing to do
+    
+    // Turn this wall into a door
+    /set_tile/x/y/TILE_DOOR.
+    
+    // Check if this door connects to any floor (i.e., opens into a room)
+    // If not, we're at a corner and need to extend the door to an adjacent wall
+    /extend_door_if_corner/x/y.
+    
+    << 0.
+<
 
-#dig_corridor(start_x, start_y, dir, length) >
-    // Dig a corridor and return end position packed as y*1000+x
-    // Also creates door at start
+#extend_door_if_corner(x, y) >
+    // After placing a door, check if it has adjacent floor
+    // If not, it's a corner - also make an adjacent wall into a door
     
-    dx := /get_delta_x/dir.
-    dy := /get_delta_y/dir.
+    left_tile := /get_tile/(x-1)/y.
+    right_tile := /get_tile/(x+1)/y.
+    up_tile := /get_tile/x/(y-1).
+    down_tile := /get_tile/x/(y+1).
     
-    cx := start_x.
-    cy := start_y.
+    // Check for adjacent floor
+    has_floor := 0.
+    has_floor = 1 when left_tile == TILE_FLOOR.
+    has_floor = 1 when right_tile == TILE_FLOOR.
+    has_floor = 1 when up_tile == TILE_FLOOR.
+    has_floor = 1 when down_tile == TILE_FLOOR.
     
-    // Create door at starting wall
-    /set_tile/cx/cy/TILE_DOOR.
+    << 0 when has_floor == 1. // Already connects to room, we're good
     
-    // Dig corridor tiles
-    for i in 0..length >
-        cx = cx + dx.
-        cy = cy + dy.
+    // No adjacent floor - this is a corner. Open an adjacent wall.
+    // Pick the first wall we find and make it a door
+    made_door := 0.
+    
+    // Check left
+    is_left_wall := /is_wall_tile/left_tile.
+    /set_tile/(x-1)/y/TILE_DOOR when is_left_wall == 1 and made_door == 0.
+    made_door = 1 when is_left_wall == 1.
+    
+    // Check right  
+    is_right_wall := /is_wall_tile/right_tile.
+    /set_tile/(x+1)/y/TILE_DOOR when is_right_wall == 1 and made_door == 0.
+    made_door = 1 when is_right_wall == 1 and made_door == 0.
+    
+    // Check up
+    is_up_wall := /is_wall_tile/up_tile.
+    /set_tile/x/(y-1)/TILE_DOOR when is_up_wall == 1 and made_door == 0.
+    made_door = 1 when is_up_wall == 1 and made_door == 0.
+    
+    // Check down
+    is_down_wall := /is_wall_tile/down_tile.
+    /set_tile/x/(y+1)/TILE_DOOR when is_down_wall == 1 and made_door == 0.
+    
+    << 0.
+<
+
+#create_adjacent_doors(cx, cy) >
+    // Force doors on any adjacent walls - ensures corridor always connects
+    /force_door_if_wall/(cx - 1)/cy.
+    /force_door_if_wall/(cx + 1)/cy.
+    /force_door_if_wall/cx/(cy - 1).
+    /force_door_if_wall/cx/(cy + 1).
+    << 0.
+<
+
+#dig_drunk_corridor(x1, y1, x2, y2, door1_x, door1_y, door2_x, door2_y) >
+    // Connect two points with a "drunken walk" corridor
+    // x1,y1 and x2,y2 are one tile OUTSIDE the room walls
+    // door1/door2 are ON the walls
+    
+    // First, create doors at both walls
+    /set_tile/door1_x/door1_y/TILE_DOOR.
+    /set_tile/door2_x/door2_y/TILE_DOOR.
+    
+    // Start digging from x1,y1
+    cx := x1.
+    cy := y1.
+    
+    // Place first corridor tile
+    /set_tile/cx/cy/TILE_CORRIDOR when /can_place_corridor/cx/cy == 1.
+    
+    // Max steps to prevent infinite loops
+    max_steps := (MAP_WIDTH + MAP_HEIGHT) * 4.
+    steps := 0.
+    
+    loop when steps lt max_steps >
+        // Check if we've reached the destination
+        at_dest := 0.
+        at_dest = 1 when cx == x2 and cy == y2.
+        >> when at_dest == 1.
         
-        // Check bounds
+        // Calculate direction to target
+        dx := 0.
+        dx = 1 when x2 gt cx.
+        dx = 0 - 1 when x2 lt cx.
+        
+        dy := 0.
+        dy = 1 when y2 gt cy.
+        dy = 0 - 1 when y2 lt cy.
+        
+        // Calculate distances
+        dist_x := x2 - cx.
+        dist_x = 0 - dist_x when dist_x lt 0.
+        dist_y := y2 - cy.
+        dist_y = 0 - dist_y when dist_y lt 0.
+        
+        // Roll for behavior: 0-84 = toward target, 85-96 = deviate, 97-99 = wobble
+        roll := /rng_int/100.
+        
+        move_x := 0.
+        move_y := 0.
+        
+        // Decide axis: prefer the one with more distance
+        prefer_x := 0.
+        prefer_x = 1 when dist_x gt dist_y.
+        // If equal, random choice
+        rand_axis := /rng_int/2.
+        prefer_x = rand_axis when dist_x == dist_y and dist_x gt 0.
+        
+        // If only one axis left, must go that way
+        must_x := 0.
+        must_y := 0.
+        must_x = 1 when dist_y == 0 and dist_x gt 0.
+        must_y = 1 when dist_x == 0 and dist_y gt 0.
+        
+        // Normal movement toward target (85%)
+        normal := 0.
+        normal = 1 when roll lt 85.
+        
+        // Deviation: perpendicular (12%)
+        deviate := 0.
+        deviate = 1 when roll ge 85 and roll lt 97.
+        
+        // Wobble: random perpendicular (3%)
+        wobble := 0.
+        wobble = 1 when roll ge 97.
+        
+        // Handle must cases first
+        move_x = dx when must_x == 1.
+        move_y = dy when must_y == 1.
+        
+        // Normal movement (if not must case)
+        no_must := 1 - must_x - must_y.
+        no_must = 0 when no_must lt 0.
+        
+        // Normal: move along preferred axis
+        move_x = dx when normal == 1 and prefer_x == 1 and no_must == 1.
+        move_y = dy when normal == 1 and prefer_x == 0 and no_must == 1.
+        
+        // Deviation: move along non-preferred axis
+        move_y = dy when deviate == 1 and prefer_x == 1 and dist_y gt 0 and no_must == 1.
+        move_x = dx when deviate == 1 and prefer_x == 0 and dist_x gt 0 and no_must == 1.
+        // Fall back to preferred if perpendicular has no distance
+        move_x = dx when deviate == 1 and prefer_x == 1 and dist_y == 0 and no_must == 1.
+        move_y = dy when deviate == 1 and prefer_x == 0 and dist_x == 0 and no_must == 1.
+        
+        // Wobble: perpendicular jog
+        wobble_dir := /rng_int/2.
+        move_y = 1 when wobble == 1 and wobble_dir == 0 and prefer_x == 1 and no_must == 1 and dist_y gt 0.
+        move_y = 0 - 1 when wobble == 1 and wobble_dir == 1 and prefer_x == 1 and no_must == 1 and dist_y gt 0.
+        move_x = 1 when wobble == 1 and wobble_dir == 0 and prefer_x == 0 and no_must == 1 and dist_x gt 0.
+        move_x = 0 - 1 when wobble == 1 and wobble_dir == 1 and prefer_x == 0 and no_must == 1 and dist_x gt 0.
+        // Fall back if wobble can't go perpendicular
+        move_x = dx when wobble == 1 and prefer_x == 1 and dist_y == 0 and no_must == 1.
+        move_y = dy when wobble == 1 and prefer_x == 0 and dist_x == 0 and no_must == 1.
+        
+        // Try primary move
+        new_x := cx + move_x.
+        new_y := cy + move_y.
+        
+        // Check if move is valid
         valid := 1.
-        valid = 0 when cx lt 1.
-        valid = 0 when cy lt 1.
-        valid = 0 when cx ge MAP_WIDTH - 1.
-        valid = 0 when cy ge MAP_HEIGHT - 1.
+        valid = 0 when new_x lt 0.
+        valid = 0 when new_y lt 0.
+        valid = 0 when new_x ge MAP_WIDTH.
+        valid = 0 when new_y ge MAP_HEIGHT.
         
-        /set_tile/cx/cy/TILE_CORRIDOR when valid == 1.
+        // Check new tile - can we place corridor there?
+        new_tile := /get_tile/new_x/new_y.
+        is_wall := /is_wall_tile/new_tile.
+        valid = 0 when is_wall == 1.
+        
+        // If valid, move and place corridor
+        moved := 0.
+        cx = new_x when valid == 1.
+        cy = new_y when valid == 1.
+        moved = valid.
+        /set_tile/cx/cy/TILE_CORRIDOR when moved == 1 and /can_place_corridor/cx/cy == 1.
+        
+        // If not valid, try direct move toward target
+        try_direct := 0.
+        try_direct = 1 when moved == 0 and dx != 0.
+        
+        direct_x := cx + dx.
+        direct_y := cy.
+        direct_tile := /get_tile/direct_x/direct_y.
+        direct_ok := 0.
+        direct_ok = 1 when /is_wall_tile/direct_tile == 0.
+        direct_ok = 0 when direct_x lt 0.
+        direct_ok = 0 when direct_x ge MAP_WIDTH.
+        
+        cx = direct_x when try_direct == 1 and direct_ok == 1.
+        moved = 1 when try_direct == 1 and direct_ok == 1.
+        /set_tile/cx/cy/TILE_CORRIDOR when try_direct == 1 and direct_ok == 1 and /can_place_corridor/cx/cy == 1.
+        
+        // If still not moved, try vertical direct
+        try_vert := 0.
+        try_vert = 1 when moved == 0 and dy != 0.
+        
+        vert_x := cx.
+        vert_y := cy + dy.
+        vert_tile := /get_tile/vert_x/vert_y.
+        vert_ok := 0.
+        vert_ok = 1 when /is_wall_tile/vert_tile == 0.
+        vert_ok = 0 when vert_y lt 0.
+        vert_ok = 0 when vert_y ge MAP_HEIGHT.
+        
+        cy = vert_y when try_vert == 1 and vert_ok == 1.
+        moved = 1 when try_vert == 1 and vert_ok == 1.
+        /set_tile/cx/cy/TILE_CORRIDOR when try_vert == 1 and vert_ok == 1 and /can_place_corridor/cx/cy == 1.
+        
+        steps = steps + 1.
     <
     
-    << cy * 1000 + cx.
+    // Ensure final tile at destination is placed
+    /set_tile/x2/y2/TILE_CORRIDOR when /can_place_corridor/x2/y2 == 1.
+    
+    // FALLBACK: Force doors on any walls adjacent to where corridor ends
+    // This handles cases where the drunken walk diverged from the planned path
+    /create_adjacent_doors/cx/cy.
 <
 
 // ============================================================================
-// Room Addition (Organic Expansion)
+// Room Edge Point Calculation
 // ============================================================================
 
-#try_add_room() >
-    // Try to add a room by expanding from existing structure
-    // Returns 1 on success, 0 on failure
+#get_room_edge_point(room_idx, target_x, target_y) >
+    // Get a point on the room's wall facing toward target
+    // Returns packed value: y * 1000 + x
+    // The point is OUTSIDE the room (on the wall tile)
     
-    // Pick expansion point
-    exp_idx := /pick_unused_expansion/.
-    << 0 when exp_idx == -1.
+    rx := room_x[room_idx].
+    ry := room_y[room_idx].
+    rw := room_w[room_idx].
+    rh := room_h[room_idx].
+    cx := room_cx[room_idx].
+    cy := room_cy[room_idx].
     
-    // Mark as used
-    expand_used[exp_idx] = 1.
+    // Determine which wall to use based on target direction
+    diff_x := target_x - cx.
+    diff_y := target_y - cy.
     
-    // Get expansion data
-    ex := expand_x[exp_idx].
-    ey := expand_y[exp_idx].
-    dir := expand_dir[exp_idx].
+    abs_dx := diff_x.
+    abs_dx = 0 - diff_x when diff_x lt 0.
+    abs_dy := diff_y.
+    abs_dy = 0 - diff_y when diff_y lt 0.
     
-    // Random corridor length (3-6)
-    corridor_len := /rng_int/4 + 3.
+    // Pick wall based on primary direction
+    // 0 = top, 1 = bottom, 2 = left, 3 = right
+    wall := 0.
     
-    // Calculate room dimensions
+    // Prefer horizontal movement if dx > dy
+    prefer_horiz := 0.
+    prefer_horiz = 1 when abs_dx gt abs_dy.
+    
+    // Right wall if target is to the right
+    wall = 3 when prefer_horiz == 1 and diff_x gt 0.
+    // Left wall if target is to the left
+    wall = 2 when prefer_horiz == 1 and diff_x lt 0.
+    // Bottom wall if target is below
+    wall = 1 when prefer_horiz == 0 and diff_y gt 0.
+    // Top wall if target is above
+    wall = 0 when prefer_horiz == 0 and diff_y le 0.
+    
+    // Get random point along that wall (interior columns/rows only)
+    edge_x := 0.
+    edge_y := 0.
+    
+    int_w := rw - 2.
+    int_h := rh - 2.
+    int_w = 1 when int_w lt 1.
+    int_h = 1 when int_h lt 1.
+    
+    // Top wall - corridor starts one tile above top wall
+    edge_x = rx + 1 + /rng_int/int_w when wall == 0.
+    edge_y = ry - 1 when wall == 0.
+    
+    // Bottom wall - corridor starts one tile below bottom wall
+    edge_x = rx + 1 + /rng_int/int_w when wall == 1.
+    edge_y = ry + rh when wall == 1.
+    
+    // Left wall - corridor starts one tile left of left wall
+    edge_x = rx - 1 when wall == 2.
+    edge_y = ry + 1 + /rng_int/int_h when wall == 2.
+    
+    // Right wall - corridor starts one tile right of right wall
+    edge_x = rx + rw when wall == 3.
+    edge_y = ry + 1 + /rng_int/int_h when wall == 3.
+    
+    << edge_y * 1000 + edge_x.
+<
+
+#get_door_position(room_idx, edge_x, edge_y) >
+    // Given an edge point outside the room, find the wall tile for the door
+    // Returns packed value: y * 1000 + x
+    
+    rx := room_x[room_idx].
+    ry := room_y[room_idx].
+    rw := room_w[room_idx].
+    rh := room_h[room_idx].
+    
+    door_x := edge_x.
+    door_y := edge_y.
+    
+    // If edge is above room, door is on top wall
+    door_y = ry when edge_y lt ry.
+    // If edge is below room, door is on bottom wall
+    door_y = ry + rh - 1 when edge_y ge ry + rh.
+    // If edge is left of room, door is on left wall
+    door_x = rx when edge_x lt rx.
+    // If edge is right of room, door is on right wall
+    door_x = rx + rw - 1 when edge_x ge rx + rw.
+    
+    << door_y * 1000 + door_x.
+<
+
+// ============================================================================
+// Random Room Placement
+// ============================================================================
+
+#try_place_random_room() >
+    // Generate random room dimensions
     size_range := dng_max_room_size - dng_min_room_size + 1.
-    rw := /rng_int/size_range + dng_min_room_size.
-    rh := /rng_int/size_range + dng_min_room_size.
+    rw := /rng_int/size_range + dng_min_room_size + 2.  // +2 for walls
+    rh := /rng_int/size_range + dng_min_room_size + 2.
     
-    // Add 2 for walls
-    rw = rw + 2.
-    rh = rh + 2.
+    // Generate random position (leaving border for walls and corridors)
+    max_x := MAP_WIDTH - rw - 2.
+    max_y := MAP_HEIGHT - rh - 2.
     
-    // Calculate corridor end position
-    dx := /get_delta_x/dir.
-    dy := /get_delta_y/dir.
+    << 0 when max_x lt 2.
+    << 0 when max_y lt 2.
     
-    end_x := ex + dx * (corridor_len + 1).
-    end_y := ey + dy * (corridor_len + 1).
+    rx := /rng_int/max_x + 1.
+    ry := /rng_int/max_y + 1.
     
-    // Calculate room position based on direction
-    // Room should be centered on corridor end
-    rx := end_x.
-    ry := end_y.
+    // Check for overlaps
+    overlaps := /check_room_overlap/rx/ry/rw/rh.
+    << 0 when overlaps == 1.
     
-    // Adjust room position based on direction
-    // Right (dir=0): room starts at end_x, centered on end_y
-    rx = end_x when dir == 0.
-    ry = end_y - rh / 2 when dir == 0.
-    
-    // Left (dir=1): room ends at end_x, centered on end_y
-    rx = end_x - rw + 1 when dir == 1.
-    ry = end_y - rh / 2 when dir == 1.
-    
-    // Down (dir=2): room starts at end_y, centered on end_x
-    rx = end_x - rw / 2 when dir == 2.
-    ry = end_y when dir == 2.
-    
-    // Up (dir=3): room ends at end_y, centered on end_x
-    rx = end_x - rw / 2 when dir == 3.
-    ry = end_y - rh + 1 when dir == 3.
-    
-    // Check bounds
-    valid := 1.
-    valid = 0 when rx lt 0.
-    valid = 0 when ry lt 0.
-    valid = 0 when rx + rw ge MAP_WIDTH.
-    valid = 0 when ry + rh ge MAP_HEIGHT.
-    
-    << 0 when valid == 0.
-    
-    // Check area is clear
-    clear := /check_area_clear/rx/ry/rw/rh.
-    << 0 when clear == 0.
-    
-    // Success! Create the room and corridor
-    
-    // Dig corridor first
-    /dig_corridor/ex/ey/dir/corridor_len.
-    
-    // Make room
+    // Place the room
     /make_room/rx/ry/rw/rh.
     
-    // Create door where corridor meets room
-    door_x := rx.
-    door_y := ry + rh / 2.
-    door_x = rx + rw - 1 when dir == 1.
-    door_y = ry + rh / 2 when dir == 1.
-    door_x = rx + rw / 2 when dir == 2.
-    door_y = ry when dir == 2.
-    door_x = rx + rw / 2 when dir == 3.
-    door_y = ry + rh - 1 when dir == 3.
-    
-    /set_tile/door_x/door_y/TILE_DOOR.
-    
     // Store room data
-    room_x[room_count] = rx.
-    room_y[room_count] = ry.
-    room_w[room_count] = rw.
-    room_h[room_count] = rh.
-    room_cx[room_count] = rx + rw / 2.
-    room_cy[room_count] = ry + rh / 2.
-    
-    // Add expansion points for new room
-    /add_expansion_points/room_count/rx/ry/rw/rh.
-    
+    idx := room_count.
+    room_x[idx] = rx.
+    room_y[idx] = ry.
+    room_w[idx] = rw.
+    room_h[idx] = rh.
+    room_cx[idx] = rx + rw / 2.
+    room_cy[idx] = ry + rh / 2.
     room_count = room_count + 1.
     
     << 1.
 <
 
 // ============================================================================
-// Starting Room Creation
+// Connect Rooms with Corridors (Nearest-Neighbor / Prim's Algorithm)
 // ============================================================================
 
-#create_starting_room() >
-    // Create the first room, centered in map
+// Track which rooms are connected
+room_connected := [].
+
+#get_room_distance(room_a, room_b) >
+    // Calculate Manhattan distance between room centers
+    ax := room_cx[room_a].
+    ay := room_cy[room_a].
+    bx := room_cx[room_b].
+    by := room_cy[room_b].
     
-    // Calculate room size
-    size_range := dng_max_room_size - dng_min_room_size + 1.
-    rw := /rng_int/size_range + dng_min_room_size.
-    rh := /rng_int/size_range + dng_min_room_size.
+    dx := bx - ax.
+    dx = 0 - dx when dx lt 0.
+    dy := by - ay.
+    dy = 0 - dy when dy lt 0.
     
-    // Add 2 for walls
-    rw = rw + 2.
-    rh = rh + 2.
+    << dx + dy.
+<
+
+#find_nearest_connected_room(room_idx) >
+    // Find the nearest room to room_idx that is already connected
+    // Returns the index of that room, or -1 if none found
     
-    // Center in map
-    rx := MAP_WIDTH / 2 - rw / 2.
-    ry := MAP_HEIGHT / 2 - rh / 2.
+    best_room := -1.
+    best_dist := 9999.
     
-    // Make room
-    /make_room/rx/ry/rw/rh.
+    for i in 0..room_count >
+        // Skip self
+        >< when i == room_idx.
+        
+        // Skip unconnected rooms
+        is_conn := room_connected[i].
+        >< when is_conn == 0.
+        
+        // Calculate distance
+        dist := /get_room_distance/room_idx/i.
+        
+        // Update best if closer
+        is_better := 0.
+        is_better = 1 when dist lt best_dist.
+        
+        best_room = i when is_better == 1.
+        best_dist = dist when is_better == 1.
+    <
     
-    // Store room data
-    room_x[0] = rx.
-    room_y[0] = ry.
-    room_w[0] = rw.
-    room_h[0] = rh.
-    room_cx[0] = rx + rw / 2.
-    room_cy[0] = ry + rh / 2.
-    room_count = 1.
+    << best_room.
+<
+
+#find_nearest_unconnected_room() >
+    // Find the unconnected room that is closest to any connected room
+    // Returns packed value: nearest_connected * 1000 + unconnected_room
+    // Or -1 if no unconnected rooms remain
     
-    // Add expansion points
-    expand_count = 0.
-    /add_expansion_points/0/rx/ry/rw/rh.
+    best_unconnected := -1.
+    best_connected := -1.
+    best_dist := 9999.
     
-    // Set player start position (center of room)
-    player_x = room_cx[0].
-    player_y = room_cy[0].
-    player_prev_x = player_x.
-    player_prev_y = player_y.
-    anim_timer = 0.
+    for u in 0..room_count >
+        // Skip if already connected
+        u_conn := room_connected[u].
+        >< when u_conn == 1.
+        
+        // Find the closest connected room to this unconnected room
+        for c in 0..room_count >
+            // Skip if not connected
+            c_conn := room_connected[c].
+            >< when c_conn == 0.
+            
+            // Calculate distance
+            dist := /get_room_distance/u/c.
+            
+            // Update if this is the best pair so far
+            is_better := 0.
+            is_better = 1 when dist lt best_dist.
+            
+            best_unconnected = u when is_better == 1.
+            best_connected = c when is_better == 1.
+            best_dist = dist when is_better == 1.
+        <
+    <
+    
+    << -1 when best_unconnected == -1.
+    << best_connected * 1000 + best_unconnected.
+<
+
+#connect_two_rooms(room_a, room_b) >
+    // Connect room_a to room_b with a corridor
+    
+    // Get centers for direction calculation
+    cx1 := room_cx[room_a].
+    cy1 := room_cy[room_a].
+    cx2 := room_cx[room_b].
+    cy2 := room_cy[room_b].
+    
+    // Get edge points on each room's wall facing the other
+    packed1 := /get_room_edge_point/room_a/cx2/cy2.
+    packed2 := /get_room_edge_point/room_b/cx1/cy1.
+    
+    // Unpack corridor start/end coordinates (outside the walls)
+    x1 := packed1 % 1000.
+    y1 := packed1 / 1000.
+    x2 := packed2 % 1000.
+    y2 := packed2 / 1000.
+    
+    // Get door positions (on the walls)
+    door1_packed := /get_door_position/room_a/x1/y1.
+    door2_packed := /get_door_position/room_b/x2/y2.
+    
+    door1_x := door1_packed % 1000.
+    door1_y := door1_packed / 1000.
+    door2_x := door2_packed % 1000.
+    door2_y := door2_packed / 1000.
+    
+    // Dig drunken walk corridor (NetHack-style)
+    /dig_drunk_corridor/x1/y1/x2/y2/door1_x/door1_y/door2_x/door2_y.
+<
+
+#connect_rooms() >
+    // Use Prim's algorithm to connect rooms by nearest neighbor
+    // This ensures corridors don't skip over intermediate rooms
+    
+    << 0 when room_count lt 2.
+    
+    // Initialize: all rooms unconnected
+    for i in 0..room_count >
+        room_connected[i] = 0.
+    <
+    
+    // Start with room 0 as connected
+    room_connected[0] = 1.
+    connected_count := 1.
+    
+    // Keep connecting until all rooms are connected
+    loop when connected_count lt room_count >
+        // Find the unconnected room closest to any connected room
+        packed := /find_nearest_unconnected_room/.
+        
+        // Safety: break if no room found (shouldn't happen)
+        >> when packed == -1.
+        
+        // Unpack the result
+        conn_room := packed / 1000.
+        unconn_room := packed % 1000.
+        
+        // Connect them
+        /connect_two_rooms/conn_room/unconn_room.
+        
+        // Mark the unconnected room as now connected
+        room_connected[unconn_room] = 1.
+        connected_count = connected_count + 1.
+    <
+    
+    // Optional: 70% chance to add one extra corridor for variety (creates loops)
+    extra := /rng_int/100.
+    add_extra := 0.
+    add_extra = 1 when extra lt 70 and room_count gt 2.
+    
+    /add_extra_corridor/ when add_extra == 1.
+<
+
+#add_extra_corridor() >
+    // Connect two random rooms that aren't already likely connected
+    // Pick first room randomly
+    room_a := /rng_int/room_count.
+    
+    // Find the room that is FURTHEST from room_a (most likely to create interesting loop)
+    furthest := -1.
+    furthest_dist := 0.
+    
+    for i in 0..room_count >
+        >< when i == room_a.
+        dist := /get_room_distance/room_a/i.
+        is_further := 0.
+        is_further = 1 when dist gt furthest_dist.
+        furthest = i when is_further == 1.
+        furthest_dist = dist when is_further == 1.
+    <
+    
+    // Connect to furthest room (creates interesting shortcuts across the dungeon)
+    /connect_two_rooms/room_a/furthest when furthest != -1.
 <
 
 // ============================================================================
@@ -410,70 +704,70 @@ expand_used := []. // 1 if this expansion point has been tried
 // ============================================================================
 
 #place_stairs() >
-    // Place stairs based on upgrade state
+    // At game start (no random stairs upgrade), place stairs at top-right of first room
+    use_fixed := 0.
+    use_fixed = 1 when dng_stairs_random == 0.
     
-    // Get starting room data
-    rx := room_x[0].
-    ry := room_y[0].
-    rw := room_w[0].
-    rh := room_h[0].
+    // Fixed placement: top-right corner of first room's interior
+    trx := room_x[0].
+    try := room_y[0].
+    trw := room_w[0].
+    trh := room_h[0].
     
-    sx := 0.
-    sy := 0.
+    // Top-right of interior: (rx + w - 2, ry + 1)
+    sx := trx + trw - 2.
+    sy := try + 1.
+    /set_tile/sx/sy/TILE_STAIRS when use_fixed == 1.
+    << 0 when use_fixed == 1.
     
-    // Default: fixed position (top-right of starting room interior)
-    sx = rx + rw - 2.
-    sy = ry + 1.
+    // Random placement: choose target room for stairs (prefer not player's room)
+    player_room := 0.
     
-    // If random stairs unlocked, pick random spot in room
-    random_stairs := dng_stairs_random.
+    // Find which room player is in
+    for i in 0..room_count >
+        rx := room_x[i].
+        ry := room_y[i].
+        rw := room_w[i].
+        rh := room_h[i].
+        
+        in_x := 0.
+        in_x = 1 when player_x ge rx and player_x lt rx + rw.
+        in_y := 0.
+        in_y = 1 when player_y ge ry and player_y lt ry + rh.
+        
+        player_room = i when in_x == 1 and in_y == 1.
+    <
     
-    // If multiple rooms, always put stairs in last room (furthest)
-    target_room := 0.
-    target_room = room_count - 1 when room_count gt 1.
+    // Pick stairs room (different from player if possible)
+    stairs_room := /rng_int/room_count.
     
-    // Get target room data
-    trx := room_x[target_room].
-    try := room_y[target_room].
-    trw := room_w[target_room].
-    trh := room_h[target_room].
-    
-    // Calculate interior bounds
-    int_x := trx + 1.
-    int_y := try + 1.
-    int_w := trw - 2.
-    int_h := trh - 2.
-    
-    // Random or fixed placement
-    use_random := random_stairs.
-    use_random = 1 when target_room gt 0. // Always random if not starting room
-    
-    // Random position (not on player)
-    found := 0.
+    // If only 1 room, stairs must be with player
+    // If multiple rooms, try to pick different one
     tries := 0.
-    loop when tries lt 50 >
-        // Pick random spot in target room interior
-        sx = int_x + /rng_int/int_w when use_random == 1.
-        sy = int_y + /rng_int/int_h when use_random == 1.
-        
-        // For fixed (starting room, no random upgrade): top-right
-        sx = trx + trw - 2 when use_random == 0.
-        sy = try + 1 when use_random == 0.
-        
-        // Check not on player
-        on_player := 0.
-        on_player_x := 0. on_player_y := 0.
-        on_player_x = 1 when sx == player_x.
-        on_player_y = 1 when sy == player_y.
-        on_player = on_player_x * on_player_y.
-        
-        found = 1 when on_player == 0.
-        
-        // Fixed placement always succeeds on first try (can't be on player if room > 3x3 or different room)
-        found = 1 when use_random == 0.
-        
-        tries = tries + 1 when found == 0.
-        tries = 100 when found == 1.
+    loop when stairs_room == player_room and room_count gt 1 and tries lt 10 >
+        stairs_room = /rng_int/room_count.
+        tries = tries + 1.
+    <
+    
+    // Get stairs room bounds
+    srx := room_x[stairs_room].
+    sry := room_y[stairs_room].
+    srw := room_w[stairs_room].
+    srh := room_h[stairs_room].
+    
+    // Place stairs at random position in room interior
+    int_w := srw - 2.
+    int_h := srh - 2.
+    
+    sx = srx + 1 + /rng_int/int_w.
+    sy = sry + 1 + /rng_int/int_h.
+    
+    // Make sure not on player
+    tries = 0.
+    loop when sx == player_x and sy == player_y and tries lt 20 >
+        sx = srx + 1 + /rng_int/int_w.
+        sy = sry + 1 + /rng_int/int_h.
+        tries = tries + 1.
     <
     
     /set_tile/sx/sy/TILE_STAIRS.
@@ -486,15 +780,14 @@ expand_used := []. // 1 if this expansion point has been tried
 #spawn_gold_piles() >
     << 0 when dng_gold_enabled == 0.
     
-    // Spawn gold in rooms (not starting room)
-    gold_count := room_count * 2.
-    gold_count = 3 when gold_count lt 3.
-    gold_count = 10 when gold_count gt 10.
+    // Spawn gold in rooms - one pile per room, max 3
+    gold_count := room_count.
+    gold_count = 1 when gold_count lt 1.
+    gold_count = 3 when gold_count gt 3.
     
     for k in 0..gold_count >
-        // Pick random room (prefer non-starting rooms)
+        // Pick random room
         target := /rng_int/room_count.
-        target = 1 when target == 0 and room_count gt 1.
         
         // Get room bounds
         trx := room_x[target].
@@ -503,10 +796,13 @@ expand_used := []. // 1 if this expansion point has been tried
         trh := room_h[target].
         
         // Random position in interior
-        gx := trx + 1 + /rng_int/(trw - 2).
-        gy := try + 1 + /rng_int/(trh - 2).
+        int_w := trw - 2.
+        int_h := trh - 2.
         
-        // Only place on floor
+        gx := trx + 1 + /rng_int/int_w.
+        gy := try + 1 + /rng_int/int_h.
+        
+        // Only place on floor (not on player, stairs, other gold)
         tile := /get_tile/gx/gy.
         /set_tile/gx/gy/TILE_GOLD when tile == TILE_FLOOR.
     <
@@ -530,7 +826,7 @@ expand_used := []. // 1 if this expansion point has been tried
 <
 
 #do_generate_dungeon() >
-    // Recalculate params from tech tree (NOT from dungeon level)
+    // Recalculate params from tech tree
     /recalc_dungeon_params/.
     
     // Clear map
@@ -541,41 +837,69 @@ expand_used := []. // 1 if this expansion point has been tried
     
     // Reset room data
     room_count = 0.
-    expand_count = 0.
     
-    // Phase 1: Create starting room
-    /create_starting_room/.
-    
-    // Phase 2: Add additional rooms (based on tech tree upgrades ONLY)
+    // Phase 1: Place rooms randomly
     target_rooms := dng_max_rooms.
     attempts := 0.
-    max_attempts := target_rooms * 20. // Allow many retries
+    max_attempts := target_rooms * 50.  // Allow many retries
     
     loop when room_count lt target_rooms >
         << 0 when attempts ge max_attempts.
         
-        success := /try_add_room/.
+        success := /try_place_random_room/.
         attempts = attempts + 1.
     <
     
-    // Phase 3: Place stairs
+    // Ensure at least 1 room
+    placed := 0.
+    loop when room_count == 0 and placed == 0 >
+        // Force place a room in center if all attempts failed
+        rw := dng_min_room_size + 2.
+        rh := dng_min_room_size + 2.
+        rx := MAP_WIDTH / 2 - rw / 2.
+        ry := MAP_HEIGHT / 2 - rh / 2.
+        
+        /make_room/rx/ry/rw/rh.
+        room_x[0] = rx.
+        room_y[0] = ry.
+        room_w[0] = rw.
+        room_h[0] = rh.
+        room_cx[0] = rx + rw / 2.
+        room_cy[0] = ry + rh / 2.
+        room_count = 1.
+        placed = 1.
+    <
+    
+    // Phase 2: Connect rooms with corridors
+    /connect_rooms/.
+    
+    // Phase 3: Place player in random room
+    player_room := /rng_int/room_count.
+    player_x = room_cx[player_room].
+    player_y = room_cy[player_room].
+    player_prev_x = player_x.
+    player_prev_y = player_y.
+    anim_timer = 0.
+    
+    // Phase 4: Place stairs
     /place_stairs/.
     
-    // Phase 4: Spawn gold
+    // Phase 5: Spawn gold
     /spawn_gold_piles/.
     
-    // Phase 5: Spawn monsters
+    // Phase 6: Spawn monsters
     /spawn_random_monsters/.
 <
 
 // ============================================================================
-// Monster Spawning (respects tech tree)
+// Monster Spawning
 // ============================================================================
 
 #spawn_random_monsters() >
     /init_entities/.
     
     << 0 when dng_monster_count == 0.
+    << 0 when room_count == 0.
     
     for i in 0..dng_monster_count >
         // Random Type based on unlocked monster types
@@ -584,15 +908,15 @@ expand_used := []. // 1 if this expansion point has been tried
         roll := /rng_int/100.
         type = ENTITY_GOBLIN when dng_goblins_enabled == 1 and roll lt 50.
         
-        // Random Position in non-starting room
-        sx := 0. sy := 0.
+        // Random Position in a room (prefer non-player room)
+        sx := 0.
+        sy := 0.
         found := 0.
         
         tries := 0.
-        loop when tries lt 100 >
-            // Pick random room (prefer non-starting)
+        loop when tries lt 100 and found == 0 >
+            // Pick random room (try to avoid player's room)
             target := /rng_int/room_count.
-            target = 1 when target == 0 and room_count gt 1.
             
             // Get room bounds
             trx := room_x[target].
@@ -601,8 +925,15 @@ expand_used := []. // 1 if this expansion point has been tried
             trh := room_h[target].
             
             // Random position in interior
-            rx := trx + 1 + /rng_int/(trw - 2).
-            ry := try + 1 + /rng_int/(trh - 2).
+            int_w := trw - 2.
+            int_h := trh - 2.
+            
+            // Safety check
+            >< when int_w lt 1.
+            >< when int_h lt 1.
+            
+            rx := trx + 1 + /rng_int/int_w.
+            ry := try + 1 + /rng_int/int_h.
             
             tile := /get_tile/rx/ry.
             is_floor := 0.
@@ -610,24 +941,23 @@ expand_used := []. // 1 if this expansion point has been tried
             
             // Check player collision
             is_player := 0.
-            is_player_x := 0. is_player_y := 0.
-            is_player_x = 1 when rx == player_x.
-            is_player_y = 1 when ry == player_y.
-            is_player = is_player_x * is_player_y.
+            same_x := 0.
+            same_y := 0.
+            same_x = 1 when rx == player_x.
+            same_y = 1 when ry == player_y.
+            is_player = same_x * same_y.
             
             // Check entity collision
             collision := /get_entity_at/rx/ry.
             is_occupied := 0.
             is_occupied = 1 when collision != -1.
             
-            valid := is_floor * (1 - is_player).
-            valid = valid * (1 - is_occupied).
+            valid := is_floor * (1 - is_player) * (1 - is_occupied).
             
             sx = rx when valid == 1.
             sy = ry when valid == 1.
-            found = 1 when valid == 1.
+            found = valid.
             
-            tries = 100 when found == 1.
             tries = tries + 1.
         <
         

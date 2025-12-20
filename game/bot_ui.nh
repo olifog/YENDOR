@@ -260,13 +260,15 @@ speed_multiplier := 1.  // Computed from slider_pos
     /draw_rect/handle_x/(sy - 2)/ 8/(sh + 4)/200/200/220/255.
     
     // Labels: 1x, max_speed x
-    /text_draw/(sx - 15)/(sy + 4)/10/150/150/150/"1x".
-    /text_draw_int/(sx + sw + 5)/(sy + 4)/10/150/150/150/max_speed.
-    /text_draw/(sx + sw + 30)/(sy + 4)/10/150/150/150/"x".
+    /text_draw/(sx - 20)/(sy + 4)/14/150/150/150/"1x".
+    max_label := /ds_int_to_string/max_speed.
+    max_label = /ds_string_concat/max_label/"x".
+    /text_draw/(sx + sw + 5)/(sy + 4)/14/150/150/150/max_label.
     
     // Current speed indicator
-    /text_draw_int/(sx + sw / 2 - 10)/(sy - 15)/12/255/220/80/speed_multiplier.
-    /text_draw/(sx + sw / 2 + 15)/(sy - 15)/12/255/220/80/"x".
+    speed_label := /ds_int_to_string/speed_multiplier.
+    speed_label = /ds_string_concat/speed_label/"x".
+    /text_draw/(sx + sw / 2 - 10)/(sy - 15)/14/255/220/80/speed_label.
 <
 
 // ============================================================================

@@ -42,40 +42,41 @@ UPGRADE_DIFF_ROOM_4 := 27.        // +1 room per floor
 UPGRADE_DIFF_MONSTER_3 := 28.     // +1 monster per floor
 UPGRADE_DIFF_ROOM_MANY := 29.     // +1 room per floor
 
-// LANGUAGE BRANCH (IDs 40-69)
-// Tier 1: Basics
-UPGRADE_LANG_VARIABLES := 40.     // x := value, x = value
-UPGRADE_LANG_ARITHMETIC := 41.    // + - * / %
+// LANGUAGE BRANCH (IDs 40-69) - Game-oriented order
+// Row 0: Iteration First (starting point)
+UPGRADE_LANG_FOR := 40.           // for i in 0..10 > < (START)
+// Row 1: Decisions
+UPGRADE_LANG_WHEN := 41.          // when / unless
 UPGRADE_LANG_COMPARISON := 42.    // lt gt le ge == !=
-// Tier 2: Functions & Control
-UPGRADE_LANG_FUNCTIONS := 43.     // #name() > < and /call/
-UPGRADE_LANG_RETURN := 44.        // << return
-UPGRADE_LANG_WHEN := 45.          // when / unless
-// Tier 3: Loops
-UPGRADE_LANG_LOOP := 46.          // loop > <
-UPGRADE_LANG_FOR := 47.           // for i in 0..10 > <
-UPGRADE_LANG_BREAK := 48.         // >> and ><
-// Tier 4: Data Structures
-UPGRADE_LANG_ARRAYS := 49.        // [1, 2, 3], arr[i]
-UPGRADE_LANG_STRUCTS := 50.       // { x: 1 }, obj->field
-UPGRADE_LANG_STRINGS := 51.       // "hello"
-// Tier 5: Advanced
-UPGRADE_LANG_IFELSE := 52.        // a if cond else b
-UPGRADE_LANG_PIPES := 53.         // x | /func/
-UPGRADE_LANG_BLOCKWHEN := 54.     // > ... < when cond
-// Tier 2.5: Movement Check (unlocks right after When)
-UPGRADE_LANG_CANMOVE := 58.       // /can_move/dir
-// Tier 6: Expert
-UPGRADE_LANG_PATTERN := 55.       // val | > 0 => ... <
-UPGRADE_LANG_LAMBDA := 56.        // \(x) => expr
-// Tier 8: Vision (Local)
+// Row 2: Movement, State, Math
+UPGRADE_LANG_CANMOVE := 43.       // /can_move/dir (from When)
+UPGRADE_LANG_VARIABLES := 44.     // x := value, x = value
+UPGRADE_LANG_ARITHMETIC := 45.    // + - * / %
+// Row 3: Code Organization
+UPGRADE_LANG_FUNCTIONS := 46.     // #name() > < and /call/
+// Row 4: Control Flow
+UPGRADE_LANG_BREAK := 47.         // >> and ><
+UPGRADE_LANG_RETURN := 48.        // << return
+// Row 5: Advanced Loops
+UPGRADE_LANG_LOOP := 49.          // loop > < (after break!)
+// Row 6: Data Structures
+UPGRADE_LANG_ARRAYS := 50.        // [1, 2, 3], arr[i]
+UPGRADE_LANG_STRUCTS := 51.       // { x: 1 }, obj->field
+UPGRADE_LANG_STRINGS := 52.       // "hello"
+// Row 7: Advanced Syntax
+UPGRADE_LANG_IFELSE := 53.        // a if cond else b
+UPGRADE_LANG_PIPES := 54.         // x | /func/
+UPGRADE_LANG_BLOCKWHEN := 55.     // > ... < when cond
+// Row 8: Expert
+UPGRADE_LANG_PATTERN := 56.       // val | > 0 => ... <
+UPGRADE_LANG_LAMBDA := 57.        // \(x) => expr
+// Vision APIs (branch from CanMove)
 UPGRADE_LANG_SURROUNDINGS := 59.  // check_surroundings()
 UPGRADE_LANG_SCAN := 60.          // scan_area(radius)
-// Tier 9: Vision (Advanced)
-UPGRADE_LANG_FIND := 61.          // find_nearest(type) - from surroundings
-UPGRADE_LANG_ROOM := 62.          // get_room_info() - from surroundings
-UPGRADE_LANG_PATHFIND := 63.      // pathfind_to(x, y) - from scan
-UPGRADE_LANG_FULLMAP := 64.       // full_map_scan() - from scan
+UPGRADE_LANG_PATHFIND := 61.      // pathfind_to(x, y) - from surroundings
+UPGRADE_LANG_FIND := 62.          // find_nearest(type) - from pathfind
+UPGRADE_LANG_ROOM := 63.          // get_room_info() - from scan
+UPGRADE_LANG_FULLMAP := 64.       // full_map_scan() - from room
 
 // Total upgrade count
 UPGRADE_COUNT := 40.
@@ -149,39 +150,41 @@ upgrades := [].
     << 6000 when id == UPGRADE_DIFF_ROOM_MANY.     // Row 6 merge
     
     // LANGUAGE BRANCH - knowledge costs gold (gentle scaling)
-    // Tier 1: Basics ($10-25)
-    << 10 when id == UPGRADE_LANG_VARIABLES.
-    << 15 when id == UPGRADE_LANG_ARITHMETIC.
-    << 15 when id == UPGRADE_LANG_COMPARISON.
-    // Tier 2: Functions & Control ($30-50)
-    << 30 when id == UPGRADE_LANG_FUNCTIONS.
-    << 35 when id == UPGRADE_LANG_RETURN.
-    << 35 when id == UPGRADE_LANG_WHEN.
-    // Tier 2.5: Movement Check ($40)
-    << 40 when id == UPGRADE_LANG_CANMOVE.
-    // Tier 3: Loops ($60-90)
-    << 60 when id == UPGRADE_LANG_LOOP.
-    << 70 when id == UPGRADE_LANG_FOR.
-    << 70 when id == UPGRADE_LANG_BREAK.
-    // Tier 4: Data ($100-150)
-    << 100 when id == UPGRADE_LANG_ARRAYS.
-    << 120 when id == UPGRADE_LANG_STRUCTS.
-    << 80 when id == UPGRADE_LANG_STRINGS.
-    // Tier 5: Advanced ($150-250)
-    << 150 when id == UPGRADE_LANG_IFELSE.
-    << 200 when id == UPGRADE_LANG_PIPES.
-    << 180 when id == UPGRADE_LANG_BLOCKWHEN.
-    // Tier 6: Expert ($300-400)
+    // Row 0: Starting point ($10)
+    << 10 when id == UPGRADE_LANG_FOR.
+    // Row 1: Decisions ($20)
+    << 20 when id == UPGRADE_LANG_WHEN.
+    << 20 when id == UPGRADE_LANG_COMPARISON.
+    // Row 2: Movement, State, Math ($35)
+    << 35 when id == UPGRADE_LANG_CANMOVE.
+    << 35 when id == UPGRADE_LANG_VARIABLES.
+    << 35 when id == UPGRADE_LANG_ARITHMETIC.
+    // Row 3: Code Organization ($60)
+    << 60 when id == UPGRADE_LANG_FUNCTIONS.
+    // Row 4: Control Flow ($90)
+    << 90 when id == UPGRADE_LANG_BREAK.
+    << 90 when id == UPGRADE_LANG_RETURN.
+    // Row 5: Advanced Loops ($130)
+    << 130 when id == UPGRADE_LANG_LOOP.
+    // Row 6: Data ($180)
+    << 180 when id == UPGRADE_LANG_ARRAYS.
+    << 180 when id == UPGRADE_LANG_STRUCTS.
+    << 180 when id == UPGRADE_LANG_STRINGS.
+    // Row 7: Advanced ($250)
+    << 250 when id == UPGRADE_LANG_IFELSE.
+    << 250 when id == UPGRADE_LANG_PIPES.
+    << 250 when id == UPGRADE_LANG_BLOCKWHEN.
+    // Row 8: Expert ($350)
     << 350 when id == UPGRADE_LANG_PATTERN.
-    << 400 when id == UPGRADE_LANG_LAMBDA.
+    << 350 when id == UPGRADE_LANG_LAMBDA.
     // Vision APIs (branch from Can Move)
     << 1000 when id == UPGRADE_LANG_SURROUNDINGS.
-    << 2000 when id == UPGRADE_LANG_SCAN.
-    // Tier 9: Vision Advanced ($3000-5000)
-    << 5000 when id == UPGRADE_LANG_FIND.
-    << 4000 when id == UPGRADE_LANG_ROOM.
-    << 4000 when id == UPGRADE_LANG_PATHFIND.
-    << 5000 when id == UPGRADE_LANG_FULLMAP.
+    << 1000 when id == UPGRADE_LANG_SCAN.
+    // Vision Advanced ($2500-4000)
+    << 2500 when id == UPGRADE_LANG_PATHFIND.
+    << 4000 when id == UPGRADE_LANG_FIND.
+    << 2500 when id == UPGRADE_LANG_ROOM.
+    << 4000 when id == UPGRADE_LANG_FULLMAP.
     
     << 9999. // Unknown upgrade
 <
@@ -317,79 +320,94 @@ upgrades := [].
     has_tier5_diff := has_room4 + has_mon3.
     << 1 when id == UPGRADE_DIFF_ROOM_MANY and has_tier5_diff gt 0.
     
-    // LANGUAGE BRANCH - tutorial prerequisites (broad tree structure)
-    // Tier 1: Variables (no prereq - starting node)
-    << 1 when id == UPGRADE_LANG_VARIABLES.
+    // LANGUAGE BRANCH - game-oriented prerequisites
+    // Tree layout:
+    //                       FOR (start)
+    //                      /     \
+    //                   When    Comparison
+    //                  /   \         |
+    //            CanMove  Variables  Arithmetic
+    //               |         \      /
+    //           [Vision]    Functions (merge)
+    //                       /        \
+    //                   Break       Return
+    //                      \        /
+    //                     Loop (merge)
+    //                    /    |    \
+    //              Arrays Structs Strings
+    //                    \    |    /
+    //               IfElse  Pipes  BlockWhen
+    //                     \   |   /
+    //                  Pattern  Lambda
     
-    // Tier 1 branches: Arithmetic and Comparison both need Variables
-    has_vars := /has_upgrade/UPGRADE_LANG_VARIABLES.
-    << has_vars when id == UPGRADE_LANG_ARITHMETIC.
-    << has_vars when id == UPGRADE_LANG_COMPARISON.
+    // Row 0: FOR (no prereq - starting node)
+    << 1 when id == UPGRADE_LANG_FOR.
     
-    // Tier 2: Functions needs Arithmetic OR Comparison (merge)
-    has_arith := /has_upgrade/UPGRADE_LANG_ARITHMETIC.
-    has_comp := /has_upgrade/UPGRADE_LANG_COMPARISON.
-    has_tier1 := has_arith + has_comp.
-    << 1 when id == UPGRADE_LANG_FUNCTIONS and has_tier1 gt 0.
-    
-    // Tier 2 branches: Return and When both need Functions
-    has_funcs := /has_upgrade/UPGRADE_LANG_FUNCTIONS.
-    << has_funcs when id == UPGRADE_LANG_RETURN.
-    << has_funcs when id == UPGRADE_LANG_WHEN.
-    
-    // Tier 3: Loop needs Return OR When (merge)
-    has_ret := /has_upgrade/UPGRADE_LANG_RETURN.
-    has_when := /has_upgrade/UPGRADE_LANG_WHEN.
-    
-    // Tier 2.5: Can Move needs When (check after has_when is defined)
-    << has_when when id == UPGRADE_LANG_CANMOVE.
-    has_tier2 := has_ret + has_when.
-    << 1 when id == UPGRADE_LANG_LOOP and has_tier2 gt 0.
-    
-    // Tier 3 branches: For and Break both need Loop
-    has_loop := /has_upgrade/UPGRADE_LANG_LOOP.
-    << has_loop when id == UPGRADE_LANG_FOR.
-    << has_loop when id == UPGRADE_LANG_BREAK.
-    
-    // Tier 4: Three branches (Arrays, Structs, Strings)
-    // Arrays needs For OR Break
+    // Row 1: When and Comparison both need For
     has_for := /has_upgrade/UPGRADE_LANG_FOR.
-    has_break := /has_upgrade/UPGRADE_LANG_BREAK.
-    has_tier3 := has_for + has_break.
-    << 1 when id == UPGRADE_LANG_ARRAYS and has_tier3 gt 0.
-    << 1 when id == UPGRADE_LANG_STRUCTS and has_tier3 gt 0.
-    << 1 when id == UPGRADE_LANG_STRINGS and has_tier3 gt 0.
+    << has_for when id == UPGRADE_LANG_WHEN.
+    << has_for when id == UPGRADE_LANG_COMPARISON.
     
-    // Tier 5: Advanced (If-else, Pipes, Block-when) need ANY of tier 4
+    // Row 2: CanMove needs When, Variables needs When, Arithmetic needs Comparison
+    has_when := /has_upgrade/UPGRADE_LANG_WHEN.
+    has_comp := /has_upgrade/UPGRADE_LANG_COMPARISON.
+    << has_when when id == UPGRADE_LANG_CANMOVE.
+    << has_when when id == UPGRADE_LANG_VARIABLES.
+    << has_comp when id == UPGRADE_LANG_ARITHMETIC.
+    
+    // Row 3: Functions needs Variables OR Arithmetic (merge)
+    has_vars := /has_upgrade/UPGRADE_LANG_VARIABLES.
+    has_arith := /has_upgrade/UPGRADE_LANG_ARITHMETIC.
+    has_row2 := has_vars + has_arith.
+    << 1 when id == UPGRADE_LANG_FUNCTIONS and has_row2 gt 0.
+    
+    // Row 4: Break and Return both need Functions
+    has_funcs := /has_upgrade/UPGRADE_LANG_FUNCTIONS.
+    << has_funcs when id == UPGRADE_LANG_BREAK.
+    << has_funcs when id == UPGRADE_LANG_RETURN.
+    
+    // Row 5: Loop needs Break OR Return (merge) - infinite loops after break!
+    has_break := /has_upgrade/UPGRADE_LANG_BREAK.
+    has_ret := /has_upgrade/UPGRADE_LANG_RETURN.
+    has_row4 := has_break + has_ret.
+    << 1 when id == UPGRADE_LANG_LOOP and has_row4 gt 0.
+    
+    // Row 6: Data Structures (Arrays, Structs, Strings) need Loop
+    has_loop := /has_upgrade/UPGRADE_LANG_LOOP.
+    << has_loop when id == UPGRADE_LANG_ARRAYS.
+    << has_loop when id == UPGRADE_LANG_STRUCTS.
+    << has_loop when id == UPGRADE_LANG_STRINGS.
+    
+    // Row 7: Advanced (If-else, Pipes, Block-when) need ANY of row 6
     has_arrays := /has_upgrade/UPGRADE_LANG_ARRAYS.
     has_structs := /has_upgrade/UPGRADE_LANG_STRUCTS.
     has_strings := /has_upgrade/UPGRADE_LANG_STRINGS.
-    has_tier4 := has_arrays + has_structs + has_strings.
-    << 1 when id == UPGRADE_LANG_IFELSE and has_tier4 gt 0.
-    << 1 when id == UPGRADE_LANG_PIPES and has_tier4 gt 0.
-    << 1 when id == UPGRADE_LANG_BLOCKWHEN and has_tier4 gt 0.
+    has_row6 := has_arrays + has_structs + has_strings.
+    << 1 when id == UPGRADE_LANG_IFELSE and has_row6 gt 0.
+    << 1 when id == UPGRADE_LANG_PIPES and has_row6 gt 0.
+    << 1 when id == UPGRADE_LANG_BLOCKWHEN and has_row6 gt 0.
     
-    // Tier 6: Expert (Pattern, Lambda) need ANY of tier 5
+    // Row 8: Expert (Pattern, Lambda) need ANY of row 7
     has_ifelse := /has_upgrade/UPGRADE_LANG_IFELSE.
     has_pipes := /has_upgrade/UPGRADE_LANG_PIPES.
     has_blockwhen := /has_upgrade/UPGRADE_LANG_BLOCKWHEN.
-    has_tier5 := has_ifelse + has_pipes + has_blockwhen.
-    << 1 when id == UPGRADE_LANG_PATTERN and has_tier5 gt 0.
-    << 1 when id == UPGRADE_LANG_LAMBDA and has_tier5 gt 0.
+    has_row7 := has_ifelse + has_pipes + has_blockwhen.
+    << 1 when id == UPGRADE_LANG_PATTERN and has_row7 gt 0.
+    << 1 when id == UPGRADE_LANG_LAMBDA and has_row7 gt 0.
     
-    // Vision APIs branch from Can Move (not Can Walk)
+    // Vision APIs branch from Can Move
     has_canmove := /has_upgrade/UPGRADE_LANG_CANMOVE.
     << has_canmove when id == UPGRADE_LANG_SURROUNDINGS.
     << has_canmove when id == UPGRADE_LANG_SCAN.
     
-    // surround -> pathfind -> find
+    // Surroundings -> Pathfind -> Find
     has_surroundings := /has_upgrade/UPGRADE_LANG_SURROUNDINGS.
     << has_surroundings when id == UPGRADE_LANG_PATHFIND.
     
     has_pathfind := /has_upgrade/UPGRADE_LANG_PATHFIND.
     << has_pathfind when id == UPGRADE_LANG_FIND.
     
-    // scan -> room -> fullmap
+    // Scan -> Room -> FullMap
     has_scan := /has_upgrade/UPGRADE_LANG_SCAN.
     << has_scan when id == UPGRADE_LANG_ROOM.
     
@@ -507,8 +525,9 @@ dng_bonus_from_upgrades := 0.
     dng_max_rooms = dng_max_rooms + 1 when /has_upgrade/UPGRADE_DIFF_ROOM_MANY == 1.
     bonus = bonus + 2 when /has_upgrade/UPGRADE_DIFF_ROOM_MANY == 1.
     
-    // Room size
-    dng_max_room_size = 7 when /has_upgrade/UPGRADE_DIFF_VAR_SIZE == 1.
+    // Room size (with upgrade: 2-5 interior, meaning 4x4 to 7x7 total)
+    dng_min_room_size = 2 when /has_upgrade/UPGRADE_DIFF_VAR_SIZE == 1.
+    dng_max_room_size = 5 when /has_upgrade/UPGRADE_DIFF_VAR_SIZE == 1.
     bonus = bonus + 1 when /has_upgrade/UPGRADE_DIFF_VAR_SIZE == 1.
     
     // Monster types (Kobolds enables 1 monster, Goblins adds variety)
@@ -580,20 +599,22 @@ dng_bonus_from_upgrades := 0.
     << "+1 Monster" when id == UPGRADE_DIFF_MONSTER_3.
     << "+1 Room" when id == UPGRADE_DIFF_ROOM_MANY.
     
-    // LANGUAGE - Tier 1 (Basics)
+    // LANGUAGE - Row 0 (Start)
+    << "For Loop" when id == UPGRADE_LANG_FOR.
+    // LANGUAGE - Row 1 (Decisions)
+    << "When" when id == UPGRADE_LANG_WHEN.
+    << "Compare" when id == UPGRADE_LANG_COMPARISON.
+    // LANGUAGE - Row 2 (Movement, State, Math)
+    << "Can Move" when id == UPGRADE_LANG_CANMOVE.
     << "Variables" when id == UPGRADE_LANG_VARIABLES.
     << "Math" when id == UPGRADE_LANG_ARITHMETIC.
-    << "Compare" when id == UPGRADE_LANG_COMPARISON.
-    // LANGUAGE - Tier 2 (Functions & Control)
+    // LANGUAGE - Row 3 (Organization)
     << "Functions" when id == UPGRADE_LANG_FUNCTIONS.
-    << "Return" when id == UPGRADE_LANG_RETURN.
-    << "When" when id == UPGRADE_LANG_WHEN.
-    // LANGUAGE - Tier 2.5 (Movement)
-    << "Can Move" when id == UPGRADE_LANG_CANMOVE.
-    // LANGUAGE - Tier 3 (Loops)
-    << "Loop" when id == UPGRADE_LANG_LOOP.
-    << "For" when id == UPGRADE_LANG_FOR.
+    // LANGUAGE - Row 4 (Control Flow)
     << "Break" when id == UPGRADE_LANG_BREAK.
+    << "Return" when id == UPGRADE_LANG_RETURN.
+    // LANGUAGE - Row 5 (Advanced Loops)
+    << "Loop" when id == UPGRADE_LANG_LOOP.
     // LANGUAGE - Tier 4 (Data)
     << "Arrays" when id == UPGRADE_LANG_ARRAYS.
     << "Structs" when id == UPGRADE_LANG_STRUCTS.
@@ -653,20 +674,23 @@ dng_bonus_from_upgrades := 0.
     << "+1 monster per floor (+$2)" when id == UPGRADE_DIFF_MONSTER_3.
     << "+1 room per floor (+$2)" when id == UPGRADE_DIFF_ROOM_MANY.
     
-    // LANGUAGE - Tier 1 (describe purpose, not syntax!)
+    // LANGUAGE - describe purpose, not syntax!
+    // Row 0: Start
+    << "Try each direction!" when id == UPGRADE_LANG_FOR.
+    // Row 1: Decisions
+    << "Do when condition met" when id == UPGRADE_LANG_WHEN.
+    << "Compare values" when id == UPGRADE_LANG_COMPARISON.
+    // Row 2: Movement, State, Math
+    << "Check valid moves" when id == UPGRADE_LANG_CANMOVE.
     << "Store values for later" when id == UPGRADE_LANG_VARIABLES.
     << "Do math calculations" when id == UPGRADE_LANG_ARITHMETIC.
-    << "Compare values" when id == UPGRADE_LANG_COMPARISON.
-    // LANGUAGE - Tier 2
+    // Row 3: Organization
     << "Reusable code blocks" when id == UPGRADE_LANG_FUNCTIONS.
+    // Row 4: Control Flow
+    << "Exit loops early" when id == UPGRADE_LANG_BREAK.
     << "Output from functions" when id == UPGRADE_LANG_RETURN.
-    << "Conditional execution" when id == UPGRADE_LANG_WHEN.
-    // LANGUAGE - Tier 2.5
-    << "Check valid moves" when id == UPGRADE_LANG_CANMOVE.
-    // LANGUAGE - Tier 3
-    << "Repeat until done" when id == UPGRADE_LANG_LOOP.
-    << "Iterate over ranges" when id == UPGRADE_LANG_FOR.
-    << "Control loop flow" when id == UPGRADE_LANG_BREAK.
+    // Row 5: Advanced Loops
+    << "Repeat until break" when id == UPGRADE_LANG_LOOP.
     // LANGUAGE - Tier 4
     << "Ordered collections" when id == UPGRADE_LANG_ARRAYS.
     << "Group related data" when id == UPGRADE_LANG_STRUCTS.
@@ -863,12 +887,12 @@ tutorial_tip := "".
 
 #set_tutorial_for() >
     tutorial_title = "FOR LOOPS".
-    tutorial_line_1 = "Iterate over a range of numbers.".
+    tutorial_line_1 = "Try each direction! Core of bot AI.".
     tutorial_line_2 = "for var in start..end > body <".
     tutorial_line_3 = "Range is [start, end) - end excluded!".
-    tutorial_line_4 = "Variable is scoped to the loop.".
-    tutorial_line_5 = "Start and end can be expressions.".
-    tutorial_line_6 = "Great for array iteration.".
+    tutorial_line_4 = "0..4 gives directions: N E S W".
+    tutorial_line_5 = "Variable is scoped to the loop.".
+    tutorial_line_6 = "This is your first building block!".
     tutorial_code_1 = "for i in 0..10 >".
     tutorial_code_2 = "    /print/i.".
     tutorial_code_3 = "<".

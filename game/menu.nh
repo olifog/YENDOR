@@ -12,6 +12,39 @@ menu_state := 0.             // Current menu state
 menu_hovered_button := -1.   // Which button is hovered (-1 = none)
 menu_volume := 100.          // Volume level (0-100)
 
+// ============================================================================
+// Menu Background - Scrolling Dungeons
+// ============================================================================
+
+// Grid of dungeons for seamless scrolling (2x2 grid = 4 dungeons)
+MENU_DUNGEON_GRID := 2.      // 2x2 grid
+MENU_DUNGEON_COUNT := 4.     // Total dungeons in grid
+
+// Dungeon storage - each dungeon is MAP_WIDTH * MAP_HEIGHT
+menu_dungeon_0 := [].
+menu_dungeon_1 := [].
+menu_dungeon_2 := [].
+menu_dungeon_3 := [].
+
+// Scroll state (pixels, kept in range [0, dungeon_size) for clean wrapping)
+menu_scroll_x := 0.
+menu_scroll_y := 0.
+
+// Scroll speed (pixels per second) - very slow and relaxed
+MENU_SCROLL_SPEED_X := 4.
+MENU_SCROLL_SPEED_Y := 3.
+
+// Scale factor for menu dungeon tiles (2x size)
+MENU_TILE_SCALE := 2.
+
+// Total size of one dungeon in pixels (calculated with scale)
+menu_dungeon_pix_w := 0.
+menu_dungeon_pix_h := 0.
+
+// Special tile types for menu decorations (monsters as tiles)
+MENU_TILE_KOBOLD := 100.
+MENU_TILE_GOBLIN := 101.
+
 // In-game pause popup
 pause_popup_active := 0.     // Pause popup shown during gameplay
 pause_popup_state := 0.      // 0 = main, 1 = settings, 2 = save slot picker
@@ -39,6 +72,9 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     
     // Check save slots
     /refresh_save_slots/.
+    
+    // Initialize scrolling dungeon background
+    /init_menu_dungeons/.
 <
 
 #refresh_save_slots() >
@@ -49,11 +85,225 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
 <
 
 // ============================================================================
+// Menu Dungeon Background Generation
+// ============================================================================
+
+#init_menu_dungeons() >
+    // Calculate pixel dimensions (with scale)
+    menu_dungeon_pix_w = MAP_WIDTH * TILE_W * MENU_TILE_SCALE.
+    menu_dungeon_pix_h = MAP_HEIGHT * TILE_H * MENU_TILE_SCALE.
+    
+    // Initialize scroll position
+    menu_scroll_x = 0.
+    menu_scroll_y = 0.
+    
+    // Generate 4 dungeons with max complexity
+    /generate_menu_dungeon/0.
+    /generate_menu_dungeon/1.
+    /generate_menu_dungeon/2.
+    /generate_menu_dungeon/3.
+<
+
+#generate_menu_dungeon(idx) >
+    // Save current dungeon params
+    old_max_rooms := dng_max_rooms.
+    old_min_size := dng_min_room_size.
+    old_max_size := dng_max_room_size.
+    old_stairs := dng_stairs_random.
+    old_monsters := dng_monster_count.
+    old_kobolds := dng_kobolds_enabled.
+    old_goblins := dng_goblins_enabled.
+    old_gold := dng_gold_enabled.
+    
+    // Set max complexity for menu dungeons
+    dng_max_rooms = 5.       // Many rooms
+    dng_min_room_size = 2.
+    dng_max_room_size = 5.   // Variable sizes (4x4 to 7x7)
+    dng_stairs_random = 1.
+    dng_monster_count = 0.   // No monsters in menu
+    dng_kobolds_enabled = 0.
+    dng_goblins_enabled = 0.
+    dng_gold_enabled = 1.    // Gold piles for visual interest
+    
+    // Seed based on index for variety
+    seed := /time_ms/ + idx * 12345.
+    /rng_seed/seed.
+    
+    // Clear temporary dungeon storage
+    size := MAP_WIDTH * MAP_HEIGHT.
+    for i in 0..size >
+        dungeon[i] = TILE_EMPTY.
+    <
+    
+    // Reset room data
+    room_count = 0.
+    
+    // Place rooms randomly
+    target := dng_max_rooms.
+    attempts := 0.
+    max_attempts := target * 50.
+    loop when room_count lt target >
+        << 0 when attempts ge max_attempts.
+        success := /try_place_random_room/.
+        attempts = attempts + 1.
+    <
+    
+    // Ensure at least 1 room
+    /create_menu_fallback_room/ when room_count == 0.
+    
+    // Connect rooms with corridors
+    /connect_rooms/.
+    
+    // Place stairs for visual interest
+    /place_menu_stairs/.
+    
+    // Spawn gold
+    /spawn_menu_gold/.
+    
+    // Spawn decorative monsters (visual only, stored as special tile values)
+    /spawn_menu_monsters/.
+    
+    // Copy to appropriate menu dungeon array
+    /copy_dungeon_to_menu/idx.
+    
+    // Restore original params
+    dng_max_rooms = old_max_rooms.
+    dng_min_room_size = old_min_size.
+    dng_max_room_size = old_max_size.
+    dng_stairs_random = old_stairs.
+    dng_monster_count = old_monsters.
+    dng_kobolds_enabled = old_kobolds.
+    dng_goblins_enabled = old_goblins.
+    dng_gold_enabled = old_gold.
+<
+
+#create_menu_fallback_room() >
+    // Fallback room in center if random placement failed
+    rw := dng_min_room_size + 2.
+    rh := dng_min_room_size + 2.
+    rx := MAP_WIDTH / 2 - rw / 2.
+    ry := MAP_HEIGHT / 2 - rh / 2.
+    
+    /make_room/rx/ry/rw/rh.
+    
+    room_x[0] = rx.
+    room_y[0] = ry.
+    room_w[0] = rw.
+    room_h[0] = rh.
+    room_cx[0] = rx + rw / 2.
+    room_cy[0] = ry + rh / 2.
+    room_count = 1.
+<
+
+#place_menu_stairs() >
+    // Put stairs in last room
+    target := room_count - 1.
+    target = 0 when target lt 0.
+    
+    trx := room_x[target].
+    try := room_y[target].
+    trw := room_w[target].
+    trh := room_h[target].
+    
+    sx := trx + 1 + /rng_int/(trw - 2).
+    sy := try + 1 + /rng_int/(trh - 2).
+    
+    /set_tile/sx/sy/TILE_STAIRS.
+<
+
+#spawn_menu_gold() >
+    gold_count := room_count * 2.
+    gold_count = 6 when gold_count lt 6.
+    
+    for k in 0..gold_count >
+        target := /rng_int/room_count.
+        
+        trx := room_x[target].
+        try := room_y[target].
+        trw := room_w[target].
+        trh := room_h[target].
+        
+        gx := trx + 1 + /rng_int/(trw - 2).
+        gy := try + 1 + /rng_int/(trh - 2).
+        
+        tile := /get_tile/gx/gy.
+        /set_tile/gx/gy/TILE_GOLD when tile == TILE_FLOOR.
+    <
+<
+
+#spawn_menu_monsters() >
+    // Spawn 2-4 monsters per dungeon for visual interest
+    monster_count := 2 + /rng_int/3.
+    
+    << 0 when room_count == 0.
+    
+    for k in 0..monster_count >
+        // Pick random room (prefer non-first room if available)
+        target := /rng_int/room_count.
+        target = 1 when target == 0 and room_count gt 1.
+        
+        trx := room_x[target].
+        try := room_y[target].
+        trw := room_w[target].
+        trh := room_h[target].
+        
+        // Skip if room too small
+        >< when trw lt 4.
+        >< when trh lt 4.
+        
+        // Random position in interior
+        mx := trx + 1 + /rng_int/(trw - 2).
+        my := try + 1 + /rng_int/(trh - 2).
+        
+        tile := /get_tile/mx/my.
+        
+        // Only place on floor
+        >< when tile != TILE_FLOOR.
+        
+        // Random monster type (kobold or goblin)
+        mtype := MENU_TILE_KOBOLD.
+        mtype = MENU_TILE_GOBLIN when /rng_int/2 == 1.
+        
+        /set_tile/mx/my/mtype.
+    <
+<
+
+#copy_dungeon_to_menu(idx) >
+    size := MAP_WIDTH * MAP_HEIGHT.
+    
+    for i in 0..size >
+        tile := dungeon[i].
+        menu_dungeon_0[i] = tile when idx == 0.
+        menu_dungeon_1[i] = tile when idx == 1.
+        menu_dungeon_2[i] = tile when idx == 2.
+        menu_dungeon_3[i] = tile when idx == 3.
+    <
+<
+
+#get_menu_tile(dungeon_idx, x, y) >
+    << TILE_EMPTY when x lt 0.
+    << TILE_EMPTY when y lt 0.
+    << TILE_EMPTY when x ge MAP_WIDTH.
+    << TILE_EMPTY when y ge MAP_HEIGHT.
+    
+    i := y * MAP_WIDTH + x.
+    
+    << menu_dungeon_0[i] when dungeon_idx == 0.
+    << menu_dungeon_1[i] when dungeon_idx == 1.
+    << menu_dungeon_2[i] when dungeon_idx == 2.
+    << menu_dungeon_3[i] when dungeon_idx == 3.
+    << TILE_EMPTY.
+<
+
+// ============================================================================
 // Menu Update
 // ============================================================================
 
 #update_menu(dt) >
     << 0 when menu_active == 0.
+    
+    // Update scrolling background
+    /update_menu_scroll/dt.
     
     mx := /input_mouse_x/.
     my := /input_mouse_y/.
@@ -65,6 +315,27 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     /update_menu_main/mx/my/just_pressed when current_state == MENU_STATE_MAIN.
     /update_menu_load/mx/my/just_pressed when current_state == MENU_STATE_LOAD.
     /update_menu_settings/mx/my/just_pressed when current_state == MENU_STATE_SETTINGS.
+<
+
+#update_menu_scroll(dt) >
+    // Move up and to the left (scroll offset increases)
+    // dt is in milliseconds - use integer math: speed * dt / 1000
+    
+    delta_x := MENU_SCROLL_SPEED_X * dt / 1000.
+    delta_y := MENU_SCROLL_SPEED_Y * dt / 1000.
+    
+    // Ensure at least 1 pixel movement per frame for smooth scrolling
+    delta_x = 1 when delta_x == 0 and dt gt 0.
+    delta_y = 1 when delta_y == 0 and dt gt 0.
+    
+    // Increase scroll offset
+    menu_scroll_x = menu_scroll_x + delta_x.
+    menu_scroll_y = menu_scroll_y + delta_y.
+    
+    // Wrap at a very large value to prevent overflow
+    // We use modulo in rendering so this won't cause visual discontinuity
+    menu_scroll_x = menu_scroll_x - 10000000 when menu_scroll_x gt 10000000.
+    menu_scroll_y = menu_scroll_y - 10000000 when menu_scroll_y gt 10000000.
 <
 
 #update_menu_main(mx, my, just_pressed) >
@@ -101,6 +372,26 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
 #menu_start_new_game() >
     /play_sound_wrapper/SOUND_UI_START.
     menu_active = 0.
+    
+    // Stop any running bot
+    /bot_stop/.
+    
+    // Reset all upgrades to start fresh
+    /init_upgrades/.
+    
+    // Reset player stats for new game
+    player_hp = player_max_hp.
+    player_gold = 0.
+    dungeon_level = 1.
+    player_xp_points = 0.
+    player_xp_level = 1.
+    player_is_dead = 0.
+    turns = 0.
+    
+    // Generate fresh dungeon with base params (upgrades are now 0)
+    /generate_dungeon/.
+    dngn_bonus = /calculate_floor_bonus/.
+    
     // Fully initialize intro state (clears old state from previous plays)
     /init_intro/.
 <
@@ -187,12 +478,130 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     // Enable CRT effects for menu (classic terminal look)
     /set_skip_crt/0.
     
-    // Draw black background (as requested)
-    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/255.
+    // Draw scrolling dungeon background
+    /render_menu_dungeon_bg/.
     
     /render_menu_main/ when menu_state == MENU_STATE_MAIN.
     /render_menu_load/ when menu_state == MENU_STATE_LOAD.
     /render_menu_settings/ when menu_state == MENU_STATE_SETTINGS.
+<
+
+// ============================================================================
+// Menu Dungeon Background Rendering
+// ============================================================================
+
+#render_menu_dungeon_bg() >
+    // Draw dark background first
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/5/5/8/255.
+    
+    // Dungeon size in pixels
+    dw := menu_dungeon_pix_w.
+    dh := menu_dungeon_pix_h.
+    
+    // Use modulo to get offset within one dungeon (seamless wrapping)
+    offset_x := menu_scroll_x % dw.
+    offset_y := menu_scroll_y % dh.
+    
+    // Which world tile is at top-left (for dungeon pattern selection)
+    world_base_x := menu_scroll_x / dw.
+    world_base_y := menu_scroll_y / dh.
+    
+    // How many dungeon copies needed to fill screen (plus 1 for partial visibility)
+    copies_x := SCREEN_W / dw + 2.
+    copies_y := SCREEN_H / dh + 2.
+    
+    // Draw grid of dungeon copies
+    for cy in 0..copies_y >
+        for cx in 0..copies_x >
+            // World tile coordinates (for consistent dungeon selection)
+            world_tx := world_base_x + cx.
+            world_ty := world_base_y + cy.
+            
+            // Which dungeon to use (alternating 2x2 pattern based on WORLD position)
+            dng_idx := (world_tx % 2) + (world_ty % 2) * 2.
+            
+            // Screen position of this dungeon copy
+            px := cx * dw - offset_x.
+            py := cy * dh - offset_y.
+            
+            // Only draw if it overlaps the screen
+            visible := 1.
+            visible = 0 when px + dw lt 0.
+            visible = 0 when py + dh lt 0.
+            visible = 0 when px gt SCREEN_W.
+            visible = 0 when py gt SCREEN_H.
+            
+            /draw_menu_dungeon_copy/dng_idx/px/py when visible == 1.
+        <
+    <
+<
+
+#draw_menu_dungeon_copy(dng_idx, offset_x, offset_y) >
+    // Draw all tiles of a dungeon at the given offset
+    // Dimmed colors for background effect
+    // Uses scaled tile size for larger appearance
+    
+    scaled_tw := TILE_W * MENU_TILE_SCALE.
+    scaled_th := TILE_H * MENU_TILE_SCALE.
+    
+    for ty in 0..MAP_HEIGHT >
+        for tx in 0..MAP_WIDTH >
+            tile := /get_menu_tile/dng_idx/tx/ty.
+            
+            sx := offset_x + tx * scaled_tw.
+            sy := offset_y + ty * scaled_th.
+            
+            // Skip if off screen (with margin for scaled size)
+            >< when sx lt 0 - scaled_tw.
+            >< when sy lt 0 - scaled_th.
+            >< when sx gt SCREEN_W.
+            >< when sy gt SCREEN_H.
+            
+            // Draw empty tiles as very dim dots for texture
+            /draw_menu_empty_tile/sx/sy/scaled_th/tx/ty when tile == TILE_EMPTY.
+            
+            // Draw other tiles with dimmed colors at scaled size
+            /draw_menu_tile/tile/sx/sy/scaled_th when tile != TILE_EMPTY.
+        <
+    <
+<
+
+#draw_menu_empty_tile(sx, sy, size, tx, ty) >
+    // Very sparse dim dots for empty areas - creates subtle texture
+    // Only draw on a checkerboard pattern for subtle effect
+    checker := (tx + ty) % 4.
+    /text_char/sx/sy/size/15/15/18/46 when checker == 0.  // '.' char (46)
+<
+
+#draw_menu_tile(tile, sx, sy, size) >
+    // Dimmed versions of tile colors for background effect
+    // About 30-40% brightness for subtle background
+    
+    // Floor - very dim gray
+    /text_char/sx/sy/size/50/50/55/CHAR_FLOOR when tile == TILE_FLOOR.
+    
+    // Walls - dim brown
+    /text_char/sx/sy/size/55/30/15/CHAR_WALL_H when tile == TILE_WALL_H.
+    /text_char/sx/sy/size/55/30/15/CHAR_WALL_V when tile == TILE_WALL_V.
+    
+    // Corridor - dim gray
+    /text_char/sx/sy/size/45/45/50/CHAR_CORRIDOR when tile == TILE_CORRIDOR.
+    
+    // Door - dim brown
+    /text_char/sx/sy/size/55/30/15/CHAR_DOOR when tile == TILE_DOOR.
+    
+    // Stairs - dim cyan
+    /text_char/sx/sy/size/0/60/65/CHAR_STAIRS_DOWN when tile == TILE_STAIRS.
+    
+    // Gold - dim yellow
+    /text_char/sx/sy/size/70/70/0/CHAR_GOLD when tile == TILE_GOLD.
+    
+    // Monsters - dim red/green
+    // Kobold 'k' (107) - dim red
+    /text_char/sx/sy/size/80/30/30/107 when tile == MENU_TILE_KOBOLD.
+    
+    // Goblin 'g' (103) - dim green
+    /text_char/sx/sy/size/40/70/40/103 when tile == MENU_TILE_GOBLIN.
 <
 
 #render_menu_bg() >

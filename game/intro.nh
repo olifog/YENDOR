@@ -690,12 +690,12 @@ fade_alpha := 0.
     // Label - typewriter font
     label_x := bx.
     label_y := by - 16.
-    /text_draw_font/label_x/label_y/11/35/30/40/2/"Signature:".
+    /text_draw_font/label_x/label_y/14/35/30/40/2/"Signature:".
     
     // X mark
     x_mark_x := bx + 8.
     x_mark_y := by + bh - 28.
-    /text_draw_font/x_mark_x/x_mark_y/12/80/70/60/2/"X" when sig_point_count lt 3.
+    /text_draw_font/x_mark_x/x_mark_y/14/80/70/60/2/"X" when sig_point_count lt 3.
 <
 
 #draw_signature() >

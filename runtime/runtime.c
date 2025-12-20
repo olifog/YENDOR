@@ -1698,16 +1698,17 @@ void text_clear(void) {
 void text_draw(Value x, Value y, Value size, Value r, Value g, Value b,
                Value text_val) {
   const char *text = (const char *)AS_OBJ(text_val);
-  (void)size;
+  int fontSize = (int)AS_INT(size);
 #ifdef __EMSCRIPTEN__
   EM_ASM_(
       {
         if (window.textCtx) {
+          window.textCtx.font = $6 + 'px "Berkeley Mono", monospace';
           window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
           window.textCtx.fillText(UTF8ToString($3), $4, $5);
         }
       },
-      AS_INT(r), AS_INT(g), AS_INT(b), text, AS_INT(x), AS_INT(y));
+      AS_INT(r), AS_INT(g), AS_INT(b), text, AS_INT(x), AS_INT(y), fontSize);
 #else
   glPushAttrib(GL_CURRENT_BIT | GL_ENABLE_BIT);
   glDisable(GL_LIGHTING);
@@ -1726,17 +1727,18 @@ void text_draw(Value x, Value y, Value size, Value r, Value g, Value b,
 
 void text_char(Value x, Value y, Value size, Value r, Value g, Value b,
                Value c) {
-  (void)size;
   int ch = (int)AS_INT(c); // Unwrap tagged character code
+  int fontSize = (int)AS_INT(size);
 #ifdef __EMSCRIPTEN__
   EM_ASM_(
       {
         if (window.textCtx) {
+          window.textCtx.font = $6 + 'px "Berkeley Mono", monospace';
           window.textCtx.fillStyle = 'rgb(' + $0 + ',' + $1 + ',' + $2 + ')';
           window.textCtx.fillText(String.fromCharCode($3), $4, $5);
         }
       },
-      AS_INT(r), AS_INT(g), AS_INT(b), ch, AS_INT(x), AS_INT(y));
+      AS_INT(r), AS_INT(g), AS_INT(b), ch, AS_INT(x), AS_INT(y), fontSize);
 #else
   glPushAttrib(GL_CURRENT_BIT | GL_ENABLE_BIT);
   glDisable(GL_LIGHTING);

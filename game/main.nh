@@ -180,14 +180,17 @@ LAYOUT_PADDING := 16.
     /init_upgrades/.
     /init_background_shader/.
     /calculate_layout/.
+    /init_editor/.
+    /init_intro/.
+    /init_menu/.
+    
+    // Generate dungeon AFTER init_menu - menu generation uses the dungeon array
+    // and we need to overwrite it with the actual game dungeon
     /generate_dungeon/.
     
     // Set initial bonus display to what player would earn for completing floor
     dngn_bonus = /calculate_floor_bonus/.
     
-    /init_editor/.
-    /init_intro/.
-    /init_menu/.
     game_initialized = 1.
     /console_log/"Ready! Write code and click Play to run the bot.".
 <
@@ -504,11 +507,11 @@ clip_h := 0.
     /draw_rect/tx/ty/tw/TREE_HEADER_H/20/22/28/255.
     /draw_rect/tx/(ty + TREE_HEADER_H - 1)/tw/1/35/40/50/255.
     
-    /text_draw/(tx + TREE_PADDING)/(ty + 12)/13/180/160/100/"UPGRADES".
+    /text_draw/(tx + TREE_PADDING)/(ty + 12)/14/180/160/100/"UPGRADES".
     
     // Bank (right side)
-    /text_draw/(tx + tw - 100)/(ty + 12)/12/80/180/80/"Bank: $".
-    /text_draw_int/(tx + tw - 40)/(ty + 12)/12/100/220/100/player_bank.
+    /text_draw/(tx + tw - 100)/(ty + 12)/14/80/180/80/"Bank: $".
+    /text_draw_int/(tx + tw - 40)/(ty + 12)/14/100/220/100/player_bank.
     
     // Center button
     /draw_center_btn/(tx + tw / 2 - 30)/(ty + 8).
@@ -589,7 +592,7 @@ clip_h := 0.
     
     tc := 120.
     tc = 180 when hovered == 1.
-    /text_draw/(x + 10)/(y + 4)/10/tc/tc/(tc + 20)/"Center".
+    /text_draw/(x + 8)/(y + 4)/14/tc/tc/(tc + 20)/"Center".
     
     // Handle click - reset to default scroll position (-120 shows language root)
     // Skip click handling if tutorial is active (popup may overlap)
@@ -782,49 +785,46 @@ clip_h := 0.
     
     lr := 45. lg := 55. lb := 70.
     
-    // Row 0: Variables (center) -> Row 1: Arithmetic, Comparison (split)
+    // Row 0: FOR (start) -> Row 1: When, Comparison (split)
     /draw_tree_conn/(colm + nw / 2)/(row0 + nh + 2)/(col0 + nw / 2)/(row1 - 2)/lr/lg/lb.
     /draw_tree_conn/(colm + nw / 2)/(row0 + nh + 2)/(col2 + nw / 2)/(row1 - 2)/lr/lg/lb.
     
-    // Row 1 -> Row 2: Functions (merge from Arith/Comp)
+    // Row 1 -> Row 2: When -> CanMove, Variables; Comparison -> Arithmetic
+    /draw_tree_conn/(col0 + nw / 2)/(row1 + nh + 2)/(col0 + nw / 2)/(row2 - 2)/lr/lg/lb.
     /draw_tree_conn/(col0 + nw / 2)/(row1 + nh + 2)/(colm + nw / 2)/(row2 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col2 + nw / 2)/(row1 + nh + 2)/(colm + nw / 2)/(row2 - 2)/lr/lg/lb.
+    /draw_tree_conn/(col2 + nw / 2)/(row1 + nh + 2)/(col2 + nw / 2)/(row2 - 2)/lr/lg/lb.
     
-    // Row 2: Functions -> Row 3: Return, When (split)
-    /draw_tree_conn/(colm + nw / 2)/(row2 + nh + 2)/(col0 + nw / 2)/(row3 - 2)/lr/lg/lb.
+    // Row 2 -> Row 3: Variables, Arithmetic -> Functions (merge)
     /draw_tree_conn/(colm + nw / 2)/(row2 + nh + 2)/(colm + nw / 2)/(row3 - 2)/lr/lg/lb.
+    /draw_tree_conn/(col2 + nw / 2)/(row2 + nh + 2)/(colm + nw / 2)/(row3 - 2)/lr/lg/lb.
     
-    // When -> Can Move (right side connection at row 3)
-    /draw_tree_conn/(colm + nw / 2)/(row3 + nh / 2)/(col2 - 2)/(row3 + nh / 2)/lr/lg/lb.
+    // Row 3 -> Row 4: Functions -> Break, Return (split)
+    /draw_tree_conn/(colm + nw / 2)/(row3 + nh + 2)/(col0 + nw / 2)/(row4 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colm + nw / 2)/(row3 + nh + 2)/(col2 + nw / 2)/(row4 - 2)/lr/lg/lb.
     
-    // Row 3 -> Row 4: Loop (merge from Return/When)
-    /draw_tree_conn/(col0 + nw / 2)/(row3 + nh + 2)/(colm + nw / 2)/(row4 - 2)/lr/lg/lb.
-    /draw_tree_conn/(colm + nw / 2)/(row3 + nh + 2)/(colm + nw / 2)/(row4 - 2)/lr/lg/lb.
+    // Row 4 -> Row 5: Break, Return -> Loop (merge)
+    /draw_tree_conn/(col0 + nw / 2)/(row4 + nh + 2)/(colm + nw / 2)/(row5 - 2)/lr/lg/lb.
+    /draw_tree_conn/(col2 + nw / 2)/(row4 + nh + 2)/(colm + nw / 2)/(row5 - 2)/lr/lg/lb.
     
-    // Row 4: Loop -> Row 5: For, Break (split)
-    /draw_tree_conn/(colm + nw / 2)/(row4 + nh + 2)/(col0 + nw / 2)/(row5 - 2)/lr/lg/lb.
-    /draw_tree_conn/(colm + nw / 2)/(row4 + nh + 2)/(col2 + nw / 2)/(row5 - 2)/lr/lg/lb.
+    // Row 5 -> Row 6: Loop -> Arrays, Structs, Strings (fan out)
+    /draw_tree_conn/(colm + nw / 2)/(row5 + nh + 2)/(col0 + nw / 2)/(row6 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colm + nw / 2)/(row5 + nh + 2)/(colm + nw / 2)/(row6 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colm + nw / 2)/(row5 + nh + 2)/(col2 + nw / 2)/(row6 - 2)/lr/lg/lb.
     
-    // Row 5 -> Row 6: Data (Arrays, Structs, Strings) - fan out from For/Break
-    /draw_tree_conn/(col0 + nw / 2)/(row5 + nh + 2)/(col0 + nw / 2)/(row6 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col0 + nw / 2)/(row5 + nh + 2)/(colm + nw / 2)/(row6 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col2 + nw / 2)/(row5 + nh + 2)/(colm + nw / 2)/(row6 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col2 + nw / 2)/(row5 + nh + 2)/(col2 + nw / 2)/(row6 - 2)/lr/lg/lb.
-    
-    // Draw nodes (6 rows visible, Tier 4-6 below)
-    /draw_node/colm/row0/UPGRADE_LANG_VARIABLES.       // Tier 1: Root
-    /draw_node/col0/row1/UPGRADE_LANG_ARITHMETIC.      // Tier 1: Left
-    /draw_node/col2/row1/UPGRADE_LANG_COMPARISON.      // Tier 1: Right
-    /draw_node/colm/row2/UPGRADE_LANG_FUNCTIONS.       // Tier 2: Center (merge)
-    /draw_node/col0/row3/UPGRADE_LANG_RETURN.          // Tier 2: Left
-    /draw_node/colm/row3/UPGRADE_LANG_WHEN.            // Tier 2: Center
-    /draw_node/col2/row3/UPGRADE_LANG_CANMOVE.         // Tier 2.5: Right (from When)
-    /draw_node/colm/row4/UPGRADE_LANG_LOOP.            // Tier 3: Center (merge)
-    /draw_node/col0/row5/UPGRADE_LANG_FOR.             // Tier 3: Left
-    /draw_node/col2/row5/UPGRADE_LANG_BREAK.           // Tier 3: Right
-    /draw_node/col0/row6/UPGRADE_LANG_ARRAYS.          // Tier 4: Left
-    /draw_node/colm/row6/UPGRADE_LANG_STRUCTS.         // Tier 4: Center
-    /draw_node/col2/row6/UPGRADE_LANG_STRINGS.         // Tier 4: Right
+    // Draw nodes (rows 0-6)
+    /draw_node/colm/row0/UPGRADE_LANG_FOR.             // Row 0: FOR (start)
+    /draw_node/col0/row1/UPGRADE_LANG_WHEN.            // Row 1: Left
+    /draw_node/col2/row1/UPGRADE_LANG_COMPARISON.      // Row 1: Right
+    /draw_node/col0/row2/UPGRADE_LANG_CANMOVE.         // Row 2: Left (from When)
+    /draw_node/colm/row2/UPGRADE_LANG_VARIABLES.       // Row 2: Center
+    /draw_node/col2/row2/UPGRADE_LANG_ARITHMETIC.      // Row 2: Right
+    /draw_node/colm/row3/UPGRADE_LANG_FUNCTIONS.       // Row 3: Center (merge)
+    /draw_node/col0/row4/UPGRADE_LANG_BREAK.           // Row 4: Left
+    /draw_node/col2/row4/UPGRADE_LANG_RETURN.          // Row 4: Right
+    /draw_node/colm/row5/UPGRADE_LANG_LOOP.            // Row 5: Center (merge)
+    /draw_node/col0/row6/UPGRADE_LANG_ARRAYS.          // Row 6: Left
+    /draw_node/colm/row6/UPGRADE_LANG_STRUCTS.         // Row 6: Center
+    /draw_node/col2/row6/UPGRADE_LANG_STRINGS.         // Row 6: Right
     
     // Continue lower tiers
     row7 := row6 + nh + gy.
@@ -854,45 +854,44 @@ clip_h := 0.
     /draw_node/col0/row8/UPGRADE_LANG_PATTERN.         // Tier 6: Left
     /draw_node/col2/row8/UPGRADE_LANG_LAMBDA.          // Tier 6: Right
     
-    // Vision APIs: Branch from Can Move (row3/col2) to the right side
-    // Vision tree runs parallel in col3 (further right)
-    col3 := bx + (nw + gx) * 3 + gx.  // Fourth column, further right
+    // Vision APIs: Branch from Can Move (row2/col0) to the LEFT side
+    // Vision tree runs parallel to the left of main tree
+    colL1 := bx - (nw + gx).       // First column to the left of col0
+    colL2 := colL1 - (nw + gx).    // Second column to the left
     
-    // Can Move -> Surroundings/Scan (horizontal then down to row4-5)
-    vision_row0 := row3.  // Same level as Can Move
-    vision_row1 := row4.  // Surroundings/Scan level
-    vision_row2 := row5.  // Pathfind/Room level  
-    vision_row3 := row6.  // Find/FullMap level
+    // Can Move -> Surroundings/Scan (horizontal left then down to row3-5)
+    vision_row0 := row2.  // Same level as Can Move
+    vision_row1 := row3.  // Surroundings/Scan level
+    vision_row2 := row4.  // Pathfind/Room level  
+    vision_row3 := row5.  // Find/FullMap level
     
-    // Connection from Can Move (col2) to right (horizontal line)
-    /draw_tree_conn/(col2 + nw + 2)/(row3 + nh / 2)/(col3 + nw / 2)/(row3 + nh / 2)/lr/lg/lb.
+    // Connection from Can Move (col0) to left (horizontal line)
+    /draw_tree_conn/(col0 - 2)/(row2 + nh / 2)/(colL1 + nw / 2)/(row2 + nh / 2)/lr/lg/lb.
     
-    // Junction node at col3/row3 that branches down to Surroundings and Scan
-    /draw_tree_conn/(col3 + nw / 2)/(row3 + nh / 2)/(col3 + nw / 2)/(vision_row1 - 2)/lr/lg/lb.
+    // Junction at colL1/row2 that branches down to Surroundings
+    /draw_tree_conn/(colL1 + nw / 2)/(row2 + nh / 2)/(colL1 + nw / 2)/(vision_row1 - 2)/lr/lg/lb.
     
-    // Surroundings (col3/vision_row1) -> Pathfind -> Find
-    /draw_tree_conn/(col3 + nw / 2)/(vision_row1 + nh + 2)/(col3 + nw / 2)/(vision_row2 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col3 + nw / 2)/(vision_row2 + nh + 2)/(col3 + nw / 2)/(vision_row3 - 2)/lr/lg/lb.
+    // Surroundings (colL1/vision_row1) -> Pathfind -> Find
+    /draw_tree_conn/(colL1 + nw / 2)/(vision_row1 + nh + 2)/(colL1 + nw / 2)/(vision_row2 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colL1 + nw / 2)/(vision_row2 + nh + 2)/(colL1 + nw / 2)/(vision_row3 - 2)/lr/lg/lb.
     
-    // Draw Vision API nodes (stacked vertically in col3)
-    /draw_node/col3/vision_row1/UPGRADE_LANG_SURROUNDINGS.  // Surroundings
-    /draw_node/col3/vision_row2/UPGRADE_LANG_PATHFIND.      // Pathfind
-    /draw_node/col3/vision_row3/UPGRADE_LANG_FIND.          // Find
+    // Draw Vision API nodes (stacked vertically in colL1)
+    /draw_node/colL1/vision_row1/UPGRADE_LANG_SURROUNDINGS.  // Surroundings
+    /draw_node/colL1/vision_row2/UPGRADE_LANG_PATHFIND.      // Pathfind
+    /draw_node/colL1/vision_row3/UPGRADE_LANG_FIND.          // Find
     
-    // Scan branch - use col4 (even further right)
-    col4 := col3 + nw + gx.
-    
+    // Scan branch - use colL2 (further left)
     // Junction from Can Move also goes to Scan
-    /draw_tree_conn/(col3 + nw / 2)/(row3 + nh / 2)/(col4 + nw / 2)/(row3 + nh / 2)/lr/lg/lb.
-    /draw_tree_conn/(col4 + nw / 2)/(row3 + nh / 2)/(col4 + nw / 2)/(vision_row1 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colL1 + nw / 2)/(row2 + nh / 2)/(colL2 + nw / 2)/(row2 + nh / 2)/lr/lg/lb.
+    /draw_tree_conn/(colL2 + nw / 2)/(row2 + nh / 2)/(colL2 + nw / 2)/(vision_row1 - 2)/lr/lg/lb.
     
-    // Scan (col4/vision_row1) -> Room -> FullMap
-    /draw_tree_conn/(col4 + nw / 2)/(vision_row1 + nh + 2)/(col4 + nw / 2)/(vision_row2 - 2)/lr/lg/lb.
-    /draw_tree_conn/(col4 + nw / 2)/(vision_row2 + nh + 2)/(col4 + nw / 2)/(vision_row3 - 2)/lr/lg/lb.
+    // Scan (colL2/vision_row1) -> Room -> FullMap
+    /draw_tree_conn/(colL2 + nw / 2)/(vision_row1 + nh + 2)/(colL2 + nw / 2)/(vision_row2 - 2)/lr/lg/lb.
+    /draw_tree_conn/(colL2 + nw / 2)/(vision_row2 + nh + 2)/(colL2 + nw / 2)/(vision_row3 - 2)/lr/lg/lb.
     
-    /draw_node/col4/vision_row1/UPGRADE_LANG_SCAN.          // Scan
-    /draw_node/col4/vision_row2/UPGRADE_LANG_ROOM.          // Room
-    /draw_node/col4/vision_row3/UPGRADE_LANG_FULLMAP.       // FullMap
+    /draw_node/colL2/vision_row1/UPGRADE_LANG_SCAN.          // Scan
+    /draw_node/colL2/vision_row2/UPGRADE_LANG_ROOM.          // Room
+    /draw_node/colL2/vision_row3/UPGRADE_LANG_FULLMAP.       // FullMap
 <
 
 // Draw connection line between nodes (top of lower node to bottom of upper node)
@@ -998,19 +997,19 @@ clip_h := 0.
     tr = 220 when available == 1. tg = 200 when available == 1. tb = 150 when available == 1.
     tr = 190 when has == 1. tg = 210 when has == 1. tb = 220 when has == 1.
     
-    /text_draw/tx/ty/10/tr/tg/tb/name.
+    /text_draw/tx/ty/14/tr/tg/tb/name.
     
     // Cost or status - on second line
     cy := y + 26.
     >
-        /text_draw/(x + nw / 2 - 12)/cy/11/100/180/100/"OK".
+        /text_draw/(x + nw / 2 - 12)/cy/14/100/180/100/"OK".
     < when has == 1.
     >
         cr := 95. cg := 100. cb := 110.
         cr = 100 when available == 1. cg = 190 when available == 1. cb = 100 when available == 1.
         cr = 190 when just_can == 1. cg = 140 when just_can == 1. cb = 80 when just_can == 1.
-        /text_draw/(x + NODE_PAD_X)/cy/10/cr/cg/cb/"$".
-        /text_draw_int/(x + NODE_PAD_X + 12)/cy/10/cr/cg/cb/cost.
+        /text_draw/(x + NODE_PAD_X)/cy/14/cr/cg/cb/"$".
+        /text_draw_int/(x + NODE_PAD_X + 12)/cy/14/cr/cg/cb/cost.
     < when has == 0.
 <
 
@@ -1047,10 +1046,10 @@ clip_h := 0.
     /draw_rect/(tx + tw - 2)/ty/2/th/35/40/50/255.
     
     // Name
-    /text_draw/(tx + 10)/(ty + 10)/11/220/210/170/name.
+    /text_draw/(tx + 10)/(ty + 10)/14/220/210/170/name.
     
     // Description
-    /text_draw/(tx + 10)/(ty + 30)/9/155/160/175/desc.
+    /text_draw/(tx + 10)/(ty + 30)/14/155/160/175/desc.
 <
 
 #draw_tutorial_popup() >
@@ -1077,26 +1076,26 @@ clip_h := 0.
     /draw_rect/(px + 15)/(py + 35)/330/1/50/80/110/200.
     
     // Tutorial text (6 lines)
-    /text_draw/(px + 15)/(py + 45)/10/200/200/210/tutorial_line_1.
-    /text_draw/(px + 15)/(py + 60)/10/200/200/210/tutorial_line_2.
-    /text_draw/(px + 15)/(py + 75)/10/200/200/210/tutorial_line_3.
-    /text_draw/(px + 15)/(py + 90)/10/200/200/210/tutorial_line_4.
-    /text_draw/(px + 15)/(py + 105)/10/200/200/210/tutorial_line_5.
-    /text_draw/(px + 15)/(py + 120)/10/200/200/210/tutorial_line_6.
+    /text_draw/(px + 15)/(py + 45)/14/200/200/210/tutorial_line_1.
+    /text_draw/(px + 15)/(py + 60)/14/200/200/210/tutorial_line_2.
+    /text_draw/(px + 15)/(py + 75)/14/200/200/210/tutorial_line_3.
+    /text_draw/(px + 15)/(py + 90)/14/200/200/210/tutorial_line_4.
+    /text_draw/(px + 15)/(py + 105)/14/200/200/210/tutorial_line_5.
+    /text_draw/(px + 15)/(py + 120)/14/200/200/210/tutorial_line_6.
     
     // Code examples section
     /draw_rect/(px + 15)/(py + 140)/330/1/50/80/110/200.
-    /text_draw/(px + 15)/(py + 150)/10/120/160/200/"EXAMPLES:".
+    /text_draw/(px + 15)/(py + 150)/14/120/160/200/"EXAMPLES:".
     
     // Code examples (4 lines, monospace-style coloring)
-    /text_draw/(px + 15)/(py + 170)/10/255/220/100/tutorial_code_1.
-    /text_draw/(px + 15)/(py + 185)/10/255/220/100/tutorial_code_2.
-    /text_draw/(px + 15)/(py + 200)/10/255/220/100/tutorial_code_3.
-    /text_draw/(px + 15)/(py + 215)/10/255/220/100/tutorial_code_4.
+    /text_draw/(px + 15)/(py + 170)/14/255/220/100/tutorial_code_1.
+    /text_draw/(px + 15)/(py + 185)/14/255/220/100/tutorial_code_2.
+    /text_draw/(px + 15)/(py + 200)/14/255/220/100/tutorial_code_3.
+    /text_draw/(px + 15)/(py + 215)/14/255/220/100/tutorial_code_4.
     
     // Tip section
     /draw_rect/(px + 15)/(py + 240)/330/1/50/80/110/200.
-    /text_draw/(px + 15)/(py + 255)/10/100/220/150/tutorial_tip.
+    /text_draw/(px + 15)/(py + 255)/14/100/220/150/tutorial_tip.
     
     // Close button
     btn_x := px + pw / 2 - 50.
@@ -1114,7 +1113,7 @@ clip_h := 0.
     /draw_rect/btn_x/btn_y/btn_w/btn_h/bg_r/bg_g/bg_b/255.
     /draw_rect/btn_x/btn_y/btn_w/2/100/180/220/255.
     
-    /text_draw/(btn_x + 22)/(btn_y + 8)/12/220/240/255/"GOT IT!".
+    /text_draw/(btn_x + 22)/(btn_y + 8)/14/220/240/255/"GOT IT!".
     
     // Handle click
     just_clicked := /input_mouse_just_pressed/.
@@ -1242,46 +1241,48 @@ clip_h := 0.
     lrow7 := lrow6 + nh + gy.
     lrow8 := lrow7 + nh + gy.
     
-    // Tier 1: Root
-    /try_lang_node_click/lcolm/lrow0/UPGRADE_LANG_VARIABLES/mx/my.
-    // Tier 1: Branches
-    /try_lang_node_click/lcol0/lrow1/UPGRADE_LANG_ARITHMETIC/mx/my.
+    // Row 0: FOR (start)
+    /try_lang_node_click/lcolm/lrow0/UPGRADE_LANG_FOR/mx/my.
+    // Row 1: When, Comparison
+    /try_lang_node_click/lcol0/lrow1/UPGRADE_LANG_WHEN/mx/my.
     /try_lang_node_click/lcol2/lrow1/UPGRADE_LANG_COMPARISON/mx/my.
-    // Tier 2
-    /try_lang_node_click/lcolm/lrow2/UPGRADE_LANG_FUNCTIONS/mx/my.
-    /try_lang_node_click/lcol0/lrow3/UPGRADE_LANG_RETURN/mx/my.
-    /try_lang_node_click/lcolm/lrow3/UPGRADE_LANG_WHEN/mx/my.
-    /try_lang_node_click/lcol2/lrow3/UPGRADE_LANG_CANMOVE/mx/my.
-    // Tier 3
-    /try_lang_node_click/lcolm/lrow4/UPGRADE_LANG_LOOP/mx/my.
-    /try_lang_node_click/lcol0/lrow5/UPGRADE_LANG_FOR/mx/my.
-    /try_lang_node_click/lcol2/lrow5/UPGRADE_LANG_BREAK/mx/my.
-    // Tier 4: Data
+    // Row 2: CanMove, Variables, Arithmetic
+    /try_lang_node_click/lcol0/lrow2/UPGRADE_LANG_CANMOVE/mx/my.
+    /try_lang_node_click/lcolm/lrow2/UPGRADE_LANG_VARIABLES/mx/my.
+    /try_lang_node_click/lcol2/lrow2/UPGRADE_LANG_ARITHMETIC/mx/my.
+    // Row 3: Functions
+    /try_lang_node_click/lcolm/lrow3/UPGRADE_LANG_FUNCTIONS/mx/my.
+    // Row 4: Break, Return
+    /try_lang_node_click/lcol0/lrow4/UPGRADE_LANG_BREAK/mx/my.
+    /try_lang_node_click/lcol2/lrow4/UPGRADE_LANG_RETURN/mx/my.
+    // Row 5: Loop
+    /try_lang_node_click/lcolm/lrow5/UPGRADE_LANG_LOOP/mx/my.
+    // Row 6: Data
     /try_lang_node_click/lcol0/lrow6/UPGRADE_LANG_ARRAYS/mx/my.
     /try_lang_node_click/lcolm/lrow6/UPGRADE_LANG_STRUCTS/mx/my.
     /try_lang_node_click/lcol2/lrow6/UPGRADE_LANG_STRINGS/mx/my.
-    // Tier 5: Advanced
+    // Row 7: Advanced
     /try_lang_node_click/lcol0/lrow7/UPGRADE_LANG_IFELSE/mx/my.
     /try_lang_node_click/lcolm/lrow7/UPGRADE_LANG_PIPES/mx/my.
     /try_lang_node_click/lcol2/lrow7/UPGRADE_LANG_BLOCKWHEN/mx/my.
-    // Tier 6: Expert
+    // Row 8: Expert
     /try_lang_node_click/lcol0/lrow8/UPGRADE_LANG_PATTERN/mx/my.
     /try_lang_node_click/lcol2/lrow8/UPGRADE_LANG_LAMBDA/mx/my.
     
-    // Vision APIs: Branch from Can Move at row3
-    // Uses col3 for Surroundings branch, col4 for Scan branch
-    lcol3 := lang_x + (nw + gx) * 3 + gx.
-    lcol4 := lcol3 + nw + gx.
+    // Vision APIs: Branch from Can Move at row2 (to the LEFT)
+    // Uses lcolL1 for Surroundings branch, lcolL2 for Scan branch
+    lcolL1 := lang_x - (nw + gx).       // First column to the left
+    lcolL2 := lcolL1 - (nw + gx).       // Second column to the left
     
-    // Surroundings -> Pathfind -> Find (in col3, rows 4-6)
-    /try_lang_node_click/lcol3/lrow4/UPGRADE_LANG_SURROUNDINGS/mx/my.
-    /try_lang_node_click/lcol3/lrow5/UPGRADE_LANG_PATHFIND/mx/my.
-    /try_lang_node_click/lcol3/lrow6/UPGRADE_LANG_FIND/mx/my.
+    // Surroundings -> Pathfind -> Find (in colL1, rows 3-5)
+    /try_lang_node_click/lcolL1/lrow3/UPGRADE_LANG_SURROUNDINGS/mx/my.
+    /try_lang_node_click/lcolL1/lrow4/UPGRADE_LANG_PATHFIND/mx/my.
+    /try_lang_node_click/lcolL1/lrow5/UPGRADE_LANG_FIND/mx/my.
     
-    // Scan -> Room -> FullMap (in col4, rows 4-6)
-    /try_lang_node_click/lcol4/lrow4/UPGRADE_LANG_SCAN/mx/my.
-    /try_lang_node_click/lcol4/lrow5/UPGRADE_LANG_ROOM/mx/my.
-    /try_lang_node_click/lcol4/lrow6/UPGRADE_LANG_FULLMAP/mx/my.
+    // Scan -> Room -> FullMap (in colL2, rows 3-5)
+    /try_lang_node_click/lcolL2/lrow3/UPGRADE_LANG_SCAN/mx/my.
+    /try_lang_node_click/lcolL2/lrow4/UPGRADE_LANG_ROOM/mx/my.
+    /try_lang_node_click/lcolL2/lrow5/UPGRADE_LANG_FULLMAP/mx/my.
 <
 
 #update_tech_drag() >
