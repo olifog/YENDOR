@@ -1,0 +1,372 @@
+// docs_content.nh - Rich Content for Docs
+// ============================================================================
+
+// These buffers hold the currently selected content
+docs_title := "".
+docs_text_lines := -1. // List handle
+docs_code_lines := -1. // List handle
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+#docs_content_init() >
+    docs_text_lines = /ds_list_create/.
+    docs_code_lines = /ds_list_create/.
+<
+
+#docs_content_load(id) >
+    docs_text_lines = /ds_list_create/.
+    docs_code_lines = /ds_list_create/.
+    
+    name := /get_upgrade_name/id.
+    docs_title = name.
+    
+    // Load content based on ID
+    // ------------------------------------------------------------------------
+    
+    // --- VARIABLES (40) ---
+    >
+        /docs_add_line/"Store values for later use.".
+        /docs_add_line/"".
+        /docs_add_line/"Declaration (new variable):".
+        /docs_add_line/"  x := 10.".
+        /docs_add_line/"".
+        /docs_add_line/"Assignment (update existing):".
+        /docs_add_line/"  x = x + 1.".
+        /docs_add_line/"".
+        /docs_add_line/"All statements end with a period.".
+        /docs_add_line/"By convention, UPPERCASE = constants.".
+        
+        /docs_add_code/"// Store your bot's state".
+        /docs_add_code/"name := \"The Wizard\".".
+        /docs_add_code/"hp := 16.".
+        /docs_add_code/"// Print: The Wizard has 16 hp.".
+        /docs_add_code/"/print/(name + \" has \" + hp + \" hp.\").".
+        /docs_add_code/"".
+        /docs_add_code/"hp = 10.".
+        /docs_add_code/"// Print: The Wizard has 10 hp.".
+        /docs_add_code/"/print/(name + \" has \" + hp + \" hp.\").".
+    < when id == 40.
+    
+    // --- ARITHMETIC (41) ---
+    >
+        /docs_add_line/"Math operators: + - * / %".
+        /docs_add_line/"".
+        /docs_add_line/"% is modulo (remainder).".
+        /docs_add_line/"Use parentheses to group.".
+        /docs_add_line/"Use 'f' suffix for floats: 3.14f".
+        
+        /docs_add_line/"// Track how much gold you have".
+        /docs_add_code/"gold := 0.".
+        /docs_add_code/"gold = gold + 1.".
+        /docs_add_code/"".
+        /docs_add_code/"// Track your direction".
+        /docs_add_code/"dir := 0.".
+        /docs_add_code/"dir = (dir + 1) % 4.".
+    < when id == 41.
+    
+    // --- COMPARISON (42) ---
+    >
+        /docs_add_line/"Compare values. Returns 1 (true) or 0 (false).".
+        /docs_add_line/"".
+        /docs_add_line/"  lt  less than (<)".
+        /docs_add_line/"  gt  greater than (>)".
+        /docs_add_line/"  le  less or equal".
+        /docs_add_line/"  ge  greater or equal".
+        /docs_add_line/"  ==  equals".
+        /docs_add_line/"  !=  not equals".
+        /docs_add_line/"".
+        /docs_add_line/"Logic: and, or, not".
+        
+        /docs_add_code/"low_hp := hp lt 30.".
+        /docs_add_code/"should_attack := hp gt 50".
+        /docs_add_code/"enemies_around := true.".
+        /docs_add_code/"// should_retreat = 1! (true)".
+        /docs_add_code/"should_retreat := low_hp or enemies_around.".
+    < when id == 42.
+
+    // --- FUNCTIONS (43) ---
+    >
+        /docs_add_line/"Reusable blocks of code.".
+        /docs_add_line/"".
+        /docs_add_line/"Definition:".
+        /docs_add_line/"  #name(arg1, arg2) >".
+        /docs_add_line/"      body.".
+        /docs_add_line/"  <".
+        /docs_add_line/"".
+        /docs_add_line/"Calling (wand syntax):".
+        /docs_add_line/"  /name/arg1/arg2.".
+        
+        /docs_add_code/"#try_direction(dir) >".
+        /docs_add_code/"    can := /can_move/dir.".
+        /docs_add_code/"    /move/dir when can == 1.".
+        /docs_add_code/"<".
+        /docs_add_code/"".
+        /docs_add_code/"// Usage in your bot loop".
+        /docs_add_code/"/try_direction/0.".
+        /docs_add_code/"/try_direction/1.".
+        /docs_add_code/"/try_direction/2.".
+        /docs_add_code/"/try_direction/3.".
+    < when id == 43.
+    
+    // --- RETURN (44) ---
+    >
+        /docs_add_line/"Return a value from a function.".
+        /docs_add_line/"Use << to return and exit early.".
+        /docs_add_line/"Great for guard clauses.".
+        
+        /docs_add_code/"#get_walkable_dir() >".
+        /docs_add_code/"    << 0 when /can_move/0.".
+        /docs_add_code/"    << 1 when /can_move/1.".
+        /docs_add_code/"    << 2 when /can_move/2.".
+        /docs_add_code/"    << 3 when /can_move/3.".
+        /docs_add_code/"    << -1.  // stuck".
+        /docs_add_code/"<".
+    < when id == 44.
+    
+    // --- WHEN / UNLESS (45) ---
+    >
+        /docs_add_line/"Conditional execution.".
+        /docs_add_line/"Action FIRST, then condition.".
+        /docs_add_line/"".
+        /docs_add_line/"Single statement:".
+        /docs_add_line/"  action when condition.".
+        /docs_add_line/"  action unless condition.".
+        /docs_add_line/"".
+        /docs_add_line/"Block syntax (multiple statements):".
+        /docs_add_line/"  > statements < when cond.".
+        
+        /docs_add_code/"// Single statement".
+        /docs_add_code/"/move/dx/dy when can_move.".
+        /docs_add_code/"".
+        /docs_add_code/"// Block: run all or none".
+        /docs_add_code/">".
+        /docs_add_code/"    dx := target->x - player_x.".
+        /docs_add_code/"    dy := target->y - player_y.".
+        /docs_add_code/"    /move/dx/dy.".
+        /docs_add_code/"< when has_target.".
+        /docs_add_code/"".
+        /docs_add_code/"// Block unless".
+        /docs_add_code/">".
+        /docs_add_code/"    /wander/.".
+        /docs_add_code/"< unless has_target.".
+    < when id == 45.
+    
+    // --- LOOP (46) ---
+    >
+        /docs_add_line/"Repeat code in a loop.".
+        /docs_add_line/"Use >< to continue.".
+        
+        /docs_add_code/"// Try all 4 directions".
+        /docs_add_code/"d := 0.".
+        /docs_add_code/"dx := 0.".
+        /docs_add_code/"dy := 0.".
+        /docs_add_code/"/loop >".
+        /docs_add_code/"    >< when /can_move/dx/dy.".
+        /docs_add_code/"    d = (d + 1) % 4.".
+        /docs_add_code/"    dx := d % 2.".
+        /docs_add_code/"    dy := (d / 2) % 2.".
+        /docs_add_code/"<".
+    < when id == 46.
+    
+    // --- FOR (47) ---
+    >
+        /docs_add_line/"Iterate a range of numbers.".
+        /docs_add_line/"Range: start..end (end excluded)".
+        
+        /docs_add_code/"// Check all 4 directions (0, 1, 2, 3)".
+        /docs_add_code/"for dir in 0..3 >".
+        /docs_add_code/"    >> when /can_move/dir.".
+        /docs_add_code/"<".
+    < when id == 47.
+    
+    // --- BREAK (48) ---
+    >
+        /docs_add_line/"Control loop flow.".
+        /docs_add_line/">> breaks out of the loop.".
+        /docs_add_line/">< skips to next iteration.".
+        
+        /docs_add_code/"dir := 0".
+        /docs_add_code/"// Find an open direction".
+        /docs_add_code/"loop >".
+        /docs_add_code/"    // Break when we can move".
+        /docs_add_code/"    >> when /can_move/dir.".
+        /docs_add_code/"    dir = (dir + 1) % 4.".
+        /docs_add_code/"<".
+        /docs_add_code/"// Move in the direction".
+        /docs_add_code/"dx := dir % 2.".
+        /docs_add_code/"dy := (dir / 2) % 2.".
+        /docs_add_code/"/move/dx/dy.".
+    < when id == 48.
+    
+    // --- ARRAYS (49) ---
+    >
+        /docs_add_line/"Ordered list of values.".
+        /docs_add_line/"Index starts at 0.".
+        
+        /docs_add_code/"// Store cardinal directions".
+        /docs_add_code/"dirs := [\"N\", \"E\", \"S\", \"W\"].".
+        /docs_add_code/"len := /list_len/dirs.".
+        /docs_add_code/"".
+        /docs_add_code/"// Direction translation".
+        /docs_add_code/"for i in 0..(len - 1) >".
+        /docs_add_code/"    dx := 0 when dirs[i] == \"N\".".
+        /docs_add_code/"    dx := 1 when dirs[i] == \"E\".".
+        /docs_add_code/"    dx := 0 when dirs[i] == \"S\".".
+        /docs_add_code/"    dx := -1 when dirs[i] == \"W\".".
+        /docs_add_code/"".
+        /docs_add_code/"    dy := -1 when dirs[i] == \"N\".".
+        /docs_add_code/"    dy := 0 when dirs[i] == \"E\".".
+        /docs_add_code/"    dy := 1 when dirs[i] == \"S\".".
+        /docs_add_code/"    dy := 0 when dirs[i] == \"W\".".
+        /docs_add_code/"".
+        /docs_add_code/"    /print/(dirs[i] + \": \" + dx + \", \" + dy).".
+        /docs_add_code/"<".
+    < when id == 49.
+    
+    // --- STRUCTS (50) ---
+    >
+        /docs_add_line/"Group related data.".
+        /docs_add_line/"Create: { key: val, ... }".
+        /docs_add_line/"Access: obj->key".
+        
+        /docs_add_code/"enemy := { x: 10, y: 5, type: \"k\" }.".
+        /docs_add_code/"".
+        /docs_add_code/"dx := enemy->x - player_x.".
+        /docs_add_code/"dy := enemy->y - player_y.".
+        /docs_add_code/"// Change enemy type".
+        /docs_add_code/"enemy->type = \"g\".".
+        /docs_add_code/"/print/enemy->type.".
+    < when id == 50.
+    
+    // --- STRINGS (51) ---
+    >
+        /docs_add_line/"Text in double quotes.".
+        /docs_add_line/"Useful for debugging output.".
+        
+        /docs_add_code/"state := \"hunting\".".
+        /docs_add_code/"/print/state.".
+        /docs_add_code/"".
+        /docs_add_code/"// Tiles are strings".
+        /docs_add_code/"tile := grid[0][1].".
+        /docs_add_code/"/print/tile.".
+    < when id == 51.
+    
+    // --- IF/ELSE (52) ---
+    >
+        /docs_add_line/"Inline conditional value.".
+        /docs_add_line/"Syntax: value if cond else other".
+        
+        /docs_add_code/"speed := 2 if boosted else 1.".
+        /docs_add_code/"target := gold if gold else stairs.".
+    < when id == 52.
+    
+    // --- PIPES (53) ---
+    >
+        /docs_add_line/"Chain operations.".
+        /docs_add_line/"Value flows left to right.".
+        
+        /docs_add_code/"result := value | /double/ | /add/5/.".
+    < when id == 53.
+
+    // --- CAN MOVE (58) ---
+    >
+        /docs_add_line/"Check if direction is walkable.".
+        /docs_add_line/"Dirs: 0=N, 1=E, 2=S, 3=W".
+        /docs_add_line/"Returns 1 if open, 0 if wall.".
+        
+        /docs_add_code/"// Find first open direction".
+        /docs_add_code/"dir := -1.".
+        /docs_add_code/"dir = 0 when /can_move/0.".
+        /docs_add_code/"dir = 1 when dir lt 0 and /can_move/1.".
+        /docs_add_code/"dir = 2 when dir lt 0 and /can_move/2.".
+        /docs_add_code/"dir = 3 when dir lt 0 and /can_move/3.".
+        /docs_add_code/"".
+        /docs_add_code/"/move/dir when dir ge 0.".
+    < when id == 58.
+    
+    // --- CHECK SURROUNDINGS (59) ---
+    >
+        /docs_add_line/"See the 3x3 area around you.".
+        /docs_add_line/"Returns 2D array of tile strings.".
+        /docs_add_line/"".
+        /docs_add_line/"[0][0]=NW [0][1]=N [0][2]=NE".
+        /docs_add_line/"[1][0]=W  [1][1]=@ [1][2]=E".
+        /docs_add_line/"[2][0]=SW [2][1]=S [2][2]=SE".
+        /docs_add_line/"".
+        /docs_add_line/"Tiles: . (floor) # (wall) k (kobold)".
+        /docs_add_line/"       g (goblin) $ (gold) > (stairs)".
+        
+        /docs_add_code/"grid := /check_surroundings/.".
+        /docs_add_code/"north := grid[0][1].".
+        /docs_add_code/"".
+        /docs_add_code/"// Attack if kobold north".
+        /docs_add_code/"/move/0/-1 when north == \"k\".".
+    < when id == 59.
+    
+    // --- SCAN AREA (60) ---
+    >
+        /docs_add_line/"See further (radius up to 5).".
+        /docs_add_line/"Returns (2r+1) x (2r+1) grid.".
+        /docs_add_line/"Center is at [r][r].".
+        
+        /docs_add_code/"// 7x7 view (radius 3)".
+        /docs_add_code/"view := /scan_area/3.".
+        /docs_add_code/"center := view[3][3].  // you".
+        /docs_add_code/"far_east := view[3][6].".
+    < when id == 60.
+    
+    // --- FIND NEAREST (61) ---
+    >
+        /docs_add_line/"Find closest entity by type.".
+        /docs_add_line/"Types: \"gold\", \"monster\", \"stairs\"".
+        /docs_add_line/"Returns { x, y, dist, type } or 0.".
+        
+        /docs_add_code/"// Go to gold".
+        /docs_add_code/"g := /find_nearest/\"gold\".".
+        /docs_add_code/"> ".
+        /docs_add_code/"    p := /pathfind_to/g->x/g->y.".
+        /docs_add_code/"    /move/p->dx/p->dy.".
+        /docs_add_code/"< when g != 0.".
+    < when id == 61.
+    
+    // --- PATHFIND (63) ---
+    >
+        /docs_add_line/"Calculate path to target.".
+        /docs_add_line/"Returns { dx, dy, found }.".
+        /docs_add_line/"dx/dy = next step direction.".
+        
+        /docs_add_code/"// Pathfind to stairs".
+        /docs_add_code/"stairs := /find_nearest/\"stairs\".".
+        /docs_add_code/"path := /pathfind_to/stairs->x/stairs->y.".
+        /docs_add_code/"/move/path->dx/path->dy when path->found.".
+    < when id == 63.
+    
+    // --- FULL MAP (64) ---
+    >
+        /docs_add_line/"Get entire dungeon map.".
+        /docs_add_line/"Returns 2D array indexed [y][x].".
+        /docs_add_line/"Expensive! Cache the result.".
+        
+        /docs_add_code/"map := /full_map_scan/.".
+        /docs_add_code/"height := /list_len/map.".
+        /docs_add_code/"width := /list_len/map[0].".
+        /docs_add_code/"".
+        /docs_add_code/"// Check tile at 5,5".
+        /docs_add_code/"tile := map[5][5].".
+    < when id == 64.
+    
+<
+
+#docs_add_line(text) >
+    /ds_list_push/docs_text_lines/text.
+<
+
+#docs_add_code(line) >
+    /ds_list_push/docs_code_lines/line.
+<
+
+#docs_content_get_title() > << docs_title. <
+#docs_content_get_text() > << docs_text_lines. <
+#docs_content_get_code() > << docs_code_lines. <

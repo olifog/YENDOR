@@ -14,6 +14,8 @@
 @use "particles.nh".
 @use "combat.nh".
 @use "bot.nh".
+@use "docs_content.nh".
+@use "docs.nh".
 
 // ============================================================================
 // Screen Layout - Responsive Two-Pane Layout
@@ -218,6 +220,10 @@ LAYOUT_PADDING := 16.
     /update_pause_popup/dt.
     << 0 when pause_popup_active == 1.
     
+    // Handle docs overlay if active (blocks other input)
+    /update_docs/.
+    << 0 when docs_active == 1.
+    
     // If dead, wait for restart (use buttons on death screen)
     can_update := 1.
     can_update = 0 when player_is_dead == 1.
@@ -240,6 +246,7 @@ LAYOUT_PADDING := 16.
     // Update buttons and slider (must be before editor to intercept clicks)
     /update_slider/.
     /update_buttons/.
+    /update_docs_button/.
     /update_settings_button/.
     /update_tech_tree/.
     
@@ -397,6 +404,7 @@ LAYOUT_PADDING := 16.
     /draw_particles/.
     /draw_buttons/.
     /draw_slider/.
+    /draw_docs_button/.
     /draw_settings_button/.
     /render_editor/.
     
@@ -405,6 +413,9 @@ LAYOUT_PADDING := 16.
     
     // Pause popup on top of everything
     /render_pause_popup/.
+    
+    // Docs overlay on very top
+    /draw_docs_overlay/.
 <
 
 // ============================================================================

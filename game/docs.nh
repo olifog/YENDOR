@@ -1,0 +1,470 @@
+// docs.nh - Documentation/Reference System
+
+// ============================================================================
+// Allows players to view reference material for unlocked language features
+// ============================================================================
+
+docs_active := 0.
+docs_selected_id := -1.
+docs_copy_timer := 0.
+docs_copy_hovered := 0.
+
+// Scroll & Search state
+docs_scroll_y := 0.
+docs_search_query := "".
+docs_search_active := 0.
+docs_search_cursor := 0.
+
+docs_btn_copy_rect_x := -1.
+docs_btn_copy_rect_y := -1.
+docs_max_scroll := 0.
+
+// Layout constants
+DOCS_X := 100.
+DOCS_Y := 50.
+DOCS_W := 1080.
+DOCS_H := 620.
+DOCS_LIST_W := 300.
+DOCS_CONTENT_X := 420. // DOCS_X + DOCS_LIST_W + padding
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+#string_contains_ignore_case(haystack, needle) >
+    // Simple naive search (lowercase match)
+    len_h := /ds_strlen/haystack.
+    len_n := /ds_strlen/needle.
+    << 1 when len_n == 0.
+    
+    << 0 when len_h lt len_n.
+    
+    // Iterate positions
+    max_idx := len_h - len_n.
+    match := 0.
+    
+    for i in 0..(max_idx + 1) >
+        is_match := 1.
+        for j in 0..len_n >
+            ch := /ds_string_at/haystack/(i + j).
+            cn := /ds_string_at/needle/j.
+            
+            // To lower
+            ch = ch + 32 when ch ge 65 and ch le 90.
+            cn = cn + 32 when cn ge 65 and cn le 90.
+            
+            is_match = 0 when ch != cn.
+        <
+        match = 1 when is_match == 1.
+    <
+    
+    << match.
+<
+
+// ============================================================================
+// Update Logic (Sub-functions)
+// ============================================================================
+
+#docs_update_search() >
+    // Handle backspace
+    len := /ds_strlen/docs_search_query.
+    >
+        docs_search_query = /ds_string_delete_char/docs_search_query/(len - 1).
+    < when /input_key_just_pressed/11 == 1 and len gt 0. // 11 is BACKSPACE
+    
+    // Handle typing (simple a-z 0-9 for now)
+    // Check range 100-125 (a-z) and 200-209 (0-9)
+    for k in 100..126 >
+        char_str := /ds_char_to_string/(k - 100 + 97).
+        docs_search_query = /ds_string_concat/docs_search_query/char_str when /input_key_just_pressed/k == 1.
+    <
+    
+    // Exit search on Enter or Escape
+    docs_search_active = 0 when /input_key_just_pressed/5. // Enter
+    docs_search_active = 0 when /input_key_just_pressed/15. // Escape
+<
+
+#docs_check_search_focus(mx, my) >
+    // Search bar rect
+    sx := DOCS_X + 20.
+    sy := DOCS_Y + 45.
+    sw := DOCS_LIST_W - 40.
+    sh := 24.
+    
+    in_search := mx ge sx and mx lt sx + sw and my ge sy and my lt sy + sh.
+    docs_search_active = in_search.
+<
+
+#docs_update_list(mx, my) >
+    // Check if click is in list area
+    list_x := DOCS_X + 20.
+    list_y := DOCS_Y + 80. // Moved down for search bar
+    list_w := DOCS_LIST_W - 40.
+    
+    item_h := 30.
+    
+    // Iterate through all possible language upgrades (40-69)
+    y := list_y.
+    
+    for id in 40..70 >
+        has := /has_upgrade/id.
+        should_show := has.
+        
+        // Check search filter
+        name := /get_upgrade_name/id.
+        match := /string_contains_ignore_case/name/docs_search_query.
+        should_show = 0 when match == 0.
+        
+        >
+            // Check click
+            in_item := mx ge list_x and mx lt list_x + list_w and my ge y and my lt y + item_h.
+            >
+                docs_selected_id = id.
+                /docs_content_load/id.
+                docs_scroll_y = 0.
+                /play_sound_wrapper/SOUND_UI_CLICK.
+            < when in_item == 1.
+            
+            y = y + item_h.
+        < when should_show == 1.
+    <
+<
+
+#docs_update_copy_btn(mx, my) >
+    << 0 when docs_btn_copy_rect_x == -1.
+    
+    // Use the rect saved during render
+    btn_x := docs_btn_copy_rect_x.
+    btn_y := docs_btn_copy_rect_y.
+    btn_w := 60.
+    btn_h := 24.
+    
+    // Clips (hardcoded to same as draw_docs_content)
+    clip_y := DOCS_Y + 50.
+    clip_h := DOCS_H - 70.
+    
+    // Simple bounds check
+    in_btn := mx ge btn_x and mx lt btn_x + btn_w and my ge btn_y and my lt btn_y + btn_h.
+    
+    // Visibility check (is button y within clip area)
+    visible := btn_y + btn_h gt clip_y and btn_y lt clip_y + clip_h.
+    
+    docs_copy_hovered = 0.
+    docs_copy_hovered = 1 when in_btn == 1 and visible == 1.
+    
+    << 0 when in_btn == 0 or visible == 0.
+    
+    // DO COPY
+    code_lines := /docs_content_get_code/.
+    count := /ds_list_len/code_lines.
+    full_text := "".
+    newline := /ds_char_to_string/10.
+    
+    for i in 0..count >
+        line := /ds_list_get/code_lines/i.
+        full_text = /ds_string_concat/full_text/line.
+        full_text = /ds_string_concat/full_text/newline.
+    <
+    
+    /clipboard_set_text/full_text.
+    docs_copy_timer = 60.
+    /play_sound_wrapper/SOUND_UI_CLICK.
+    
+    << 1.
+<
+
+// ============================================================================
+// Main Update
+// ============================================================================
+
+#update_docs() >
+    // update timer
+    docs_copy_timer = docs_copy_timer - 1 when docs_copy_timer gt 0.
+
+    << 0 when docs_active == 0.
+    
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    just_clicked := /input_mouse_just_pressed/.
+    
+    // Handle Search Input
+    /docs_update_search/ when docs_search_active == 1.
+    
+    // Handle Scrolling (Mouse Wheel)
+    scroll := /input_scroll_delta/ * 30.
+    docs_scroll_y = docs_scroll_y - scroll when scroll != 0.
+    /input_scroll_clear/.
+    docs_scroll_y = 0 when docs_scroll_y lt 0.
+    docs_scroll_y = docs_max_scroll when docs_scroll_y gt docs_max_scroll and docs_max_scroll gt 0.
+    // Max scroll clamping done in render because we need content height
+    
+    // Check close button or click outside
+    // For now simple close on outside click
+    in_box := mx ge DOCS_X and mx lt DOCS_X + DOCS_W and my ge DOCS_Y and my lt DOCS_Y + DOCS_H.
+    
+    >
+        docs_active = 0.
+    < when just_clicked == 1 and in_box == 0.
+    
+    // Handle list clicks
+    /docs_update_list/mx/my when just_clicked == 1.
+    // Handle Search Focus
+    /docs_check_search_focus/mx/my when just_clicked == 1.
+    
+    // Handle Copy Button
+    /docs_update_copy_btn/mx/my when just_clicked == 1.
+    
+    // Handle close button
+    btn_close_x := DOCS_X + DOCS_W - 40.
+    btn_close_y := DOCS_Y + 10.
+    in_close := mx ge btn_close_x and mx lt btn_close_x + 30 and my ge btn_close_y and my lt btn_close_y + 30.
+    >
+        docs_active = 0.
+        /play_sound_wrapper/SOUND_UI_CLICK.
+    < when just_clicked == 1 and in_close == 1.
+    
+    << 1.
+<
+
+// ============================================================================
+// Rendering (Sub-functions)
+// ============================================================================
+
+#draw_docs_list() >
+    list_x := DOCS_X + 20.
+    list_y := DOCS_Y + 80.
+    item_h := 30.
+    
+    y := list_y.
+    
+    for id in 40..70 >
+        has := /has_upgrade/id.
+        >
+            name := /get_upgrade_name/id.
+            
+            match := /string_contains_ignore_case/name/docs_search_query.
+            
+            >
+                is_selected := (id == docs_selected_id).
+                
+                // Background for selected
+                >
+                    /draw_rect/(list_x - 5)/y/(DOCS_LIST_W - 30)/item_h/50/60/80/255.
+                < when is_selected == 1.
+                
+                // Text color
+                tr := 150. tg := 160. tb := 180.
+                tr = 255 when is_selected == 1. tg = 255 when is_selected == 1. tb = 255 when is_selected == 1.
+                
+                /text_draw/list_x/(y + 5)/12/tr/tg/tb/name.
+                
+                y = y + item_h.
+            < when match == 1.
+        < when has == 1.
+    <
+<
+
+#draw_docs_content(divider_x) >
+    cx := divider_x + 20.
+    cy := DOCS_Y + 50.
+    cw := DOCS_W - DOCS_LIST_W - 40.
+    ch := DOCS_H - 70.
+    
+    // Clips
+    /set_clip_rect/divider_x/cy/(cw + 20)/ch.
+    
+    << 0 when docs_selected_id == -1.
+    
+    // Content Flow
+    cur_y := cy - docs_scroll_y.
+    
+    // Title
+    title := /docs_content_get_title/.
+    /text_draw/cx/cur_y/24/100/200/255/title.
+    cur_y = cur_y + 40.
+    
+    // Text Lines
+    lines := /docs_content_get_text/.
+    count := /ds_list_len/lines.
+    
+    for i in 0..count >
+        line := /ds_list_get/lines/i.
+        /text_draw/cx/cur_y/14/220/220/230/line.
+        cur_y = cur_y + 22.
+    <
+    
+    cur_y = cur_y + 20.
+    
+    // Code Block
+    code_lines := /docs_content_get_code/.
+    code_count := /ds_list_len/code_lines.
+    
+    >
+        code_h := code_count * 24 + 30.
+        code_w := 600.
+        
+        /draw_rect/cx/cur_y/code_w/code_h/15/18/22/255.
+        /draw_rect/cx/cur_y/2/code_h/80/100/140/255.
+        
+        // Save copy button position for click logic
+        docs_btn_copy_rect_x = cx + code_w - 60 - 5.
+        docs_btn_copy_rect_y = cur_y + 5.
+        
+        // Draw Button
+        btn_x := docs_btn_copy_rect_x.
+        btn_y := docs_btn_copy_rect_y.
+        btn_w := 60. btn_h := 24.
+        
+        label := "COPY".
+        label = "COPIED" when docs_copy_timer gt 0.
+        br := 40. bg := 50. bb := 60.
+        br = 40 when docs_copy_timer gt 0. bg = 100 when docs_copy_timer gt 0. bb = 40 when docs_copy_timer gt 0.
+        
+        /draw_rect/btn_x/btn_y/btn_w/btn_h/br/bg/bb/255.
+        /text_draw/(btn_x + 8)/(btn_y + 5)/10/200/220/240/label.
+        
+        tx := cx + 15.
+        ty := cur_y + 15.
+        
+        // Draw Code
+        cr := 255. cg := 240. cb := 140.
+        for j in 0..code_count >
+            cline := /ds_list_get/code_lines/j.
+            /text_draw/tx/ty/14/cr/cg/cb/cline.
+            ty = ty + 24.
+        <
+        
+        cur_y = cur_y + code_h + 30.
+    < when code_count gt 0.
+    
+    total_h := cur_y - (cy - docs_scroll_y).
+    
+    // Clear copy rect if scrolled out (handled by click check clip)
+    
+    // Update Scroll Max (clamping)
+    max_scroll := total_h - ch.
+    max_scroll = 0 when max_scroll lt 0.
+    docs_max_scroll = max_scroll.
+    docs_scroll_y = max_scroll when docs_scroll_y gt max_scroll.
+    
+    /clear_clip_rect/.
+    
+    // Draw Scrollbar (Visual)
+    >
+        track_h := ch.
+        track_y := cy.
+        track_x := divider_x + cw + 10.
+        
+        // Ratio
+        visible_ratio := ch * 100 / total_h.
+        visible_ratio = 100 when visible_ratio gt 100.
+        
+        thumb_h := track_h * visible_ratio / 100.
+        thumb_h = 20 when thumb_h lt 20.
+        
+        range := track_h - thumb_h.
+        scroll_ratio := 0.
+        scroll_ratio = docs_scroll_y * 100 / max_scroll when max_scroll gt 0.
+        
+        thumb_y := track_y + range * scroll_ratio / 100.
+        
+        // Track
+        /draw_rect/track_x/track_y/6/track_h/30/35/40/255.
+        // Thumb
+        /draw_rect/track_x/thumb_y/6/thumb_h/80/90/100/255.
+        
+    < when total_h gt ch.
+<
+
+// ============================================================================
+// Main Draw
+// ============================================================================
+
+#draw_docs_overlay() >
+    << 0 when docs_active == 0.
+    
+    // Dim background
+    /draw_rect/0/0/SCREEN_W/SCREEN_H/0/0/0/200.
+    
+    // Main Panel
+    bg_r := 25. bg_g := 30. bg_b := 35.
+    /draw_rect/DOCS_X/DOCS_Y/DOCS_W/DOCS_H/bg_r/bg_g/bg_b/255.
+    
+    // Border
+    border_r := 60. border_g := 70. border_b := 90.
+    /draw_rect/DOCS_X/DOCS_Y/DOCS_W/2/border_r/border_g/border_b/255.
+    /draw_rect/DOCS_X/(DOCS_Y + DOCS_H - 2)/DOCS_W/2/border_r/border_g/border_b/255.
+    /draw_rect/DOCS_X/DOCS_Y/2/DOCS_H/border_r/border_g/border_b/255.
+    /draw_rect/(DOCS_X + DOCS_W - 2)/DOCS_Y/2/DOCS_H/border_r/border_g/border_b/255.
+    
+    // Header
+    /text_draw/(DOCS_X + 20)/(DOCS_Y + 15)/20/200/220/255/"LANGUAGE MANUAL".
+    
+    // Close Button [X]
+    bx := DOCS_X + DOCS_W - 40.
+    by := DOCS_Y + 10.
+    /draw_rect/bx/by/30/30/50/40/40/255.
+    /text_draw/(bx + 8)/(by + 4)/16/255/100/100/"X".
+    
+    // Divider
+    div_x := DOCS_X + DOCS_LIST_W.
+    /draw_rect/div_x/(DOCS_Y + 50)/2/(DOCS_H - 70)/border_r/border_g/border_b/255.
+    
+    // List of Topics
+    /draw_docs_list/.
+    
+    // Search Bar
+    sx := DOCS_X + 20.
+    sy := DOCS_Y + 45.
+    sw := DOCS_LIST_W - 40.
+    /draw_rect/sx/sy/sw/24/30/35/40/255.
+    /draw_rect/sx/sy/sw/24/60/70/90/255 when docs_search_active == 1. // Highlight
+    // Query text
+    query_display := docs_search_query.
+    query_display = "Search..." when /ds_strlen/docs_search_query == 0 and docs_search_active == 0.
+    qc_r := 200. qc_g := 220. qc_b := 240.
+    qc_r = 100 when /ds_strlen/docs_search_query == 0 and docs_search_active == 0. // dim placeholder
+    /text_draw/(sx + 5)/(sy + 5)/12/qc_r/qc_g/qc_b/query_display.
+    
+    // Selected Content
+    /draw_docs_content/div_x.
+<
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+#docs_select_first_available() >
+    // Find first unlocked language upgrade
+    // Range 40-70 are language upgrades
+    found := 0.
+    
+    // Default to Variables (40) if unlocked
+    has_vars := /has_upgrade/40.
+    docs_selected_id = 40 when has_vars == 1.
+    
+    // If not, just set to -1
+    docs_selected_id = -1 when has_vars == 0.
+    
+    // Refresh content for selected
+    /docs_content_load/docs_selected_id when docs_selected_id != -1.
+    docs_scroll_y = 0 when docs_selected_id != -1.
+<
+
+#toggle_docs() >
+    docs_active = 1 - docs_active.
+    
+    // Reset state on open
+    docs_scroll_y = 0.
+    docs_search_query = "".
+    docs_search_active = 0.
+    
+    /docs_content_init/ when docs_active == 1.
+    
+    // When opening, select the first unlocked language upgrade by default
+    /docs_select_first_available/ when docs_active == 1.
+<
+
+#docs_close() >
+    docs_active = 0.
+<

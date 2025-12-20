@@ -335,3 +335,54 @@ settings_btn_hovered := 0.
     // Center hole
     /draw_rect/(cx - 2)/(cy - 2)/4/4/r/g/b/255.
 <
+
+// ============================================================================
+// Docs Button
+// ============================================================================
+
+docs_btn_x := 0.
+docs_btn_y := 0.
+docs_btn_w := 50.
+docs_btn_h := 28.
+docs_btn_hovered := 0.
+
+#update_docs_button() >
+    mx := /input_mouse_x/.
+    my := /input_mouse_y/.
+    
+    // Position to the left of settings button
+    // Settings is at SCREEN_W - 50
+    bx := SCREEN_W - 50 - docs_btn_w - 10.
+    by := btn_play_y.
+    
+    docs_btn_x = bx.
+    docs_btn_y = by.
+    
+    in_btn := mx ge docs_btn_x and mx lt docs_btn_x + docs_btn_w and my ge docs_btn_y and my lt docs_btn_y + docs_btn_h.
+    docs_btn_hovered = in_btn.
+    
+    just_pressed := /input_mouse_just_pressed/.
+    
+    // Toggle docs
+    /toggle_docs/ when just_pressed == 1 and in_btn == 1.
+    /play_sound_wrapper/SOUND_UI_CLICK when just_pressed == 1 and in_btn == 1.
+<
+
+#draw_docs_button() >
+    x := docs_btn_x.
+    y := docs_btn_y.
+    w := docs_btn_w.
+    h := docs_btn_h.
+    
+    // Background
+    r := 40. g := 45. b := 55.
+    r = 60 when docs_btn_hovered == 1. g = 70 when docs_btn_hovered == 1. b = 85 when docs_btn_hovered == 1.
+    
+    /draw_rect/x/y/w/h/r/g/b/255.
+    
+    // Text
+    tr := 150. tg := 150. tb := 160.
+    tr = 200 when docs_btn_hovered == 1. tg = 200 when docs_btn_hovered == 1. tb = 210 when docs_btn_hovered == 1.
+    
+    /text_draw/(x + 8)/(y + 8)/12/tr/tg/tb/"DOCS".
+<
