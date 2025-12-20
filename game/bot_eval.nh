@@ -71,13 +71,33 @@
 // ============================================================================
 
 #bot_eval_decl(node, env) >
+    // In step mode, check if RHS is a function call - handle specially
+    << /bot_eval_decl_with_call/node/env when bot_is_stepping == 1 and node->expr->tag == TAG_CALL.
+    
     val := /bot_eval/node->expr/env.
     << /bot_env_set/env/node->name/val.
 <
 
+#bot_eval_decl_with_call(node, env) >
+    // Evaluate the function call with the variable name for return value assignment
+    call_node := node->expr.
+    var_name := node->name.
+    << /bot_eval_call_for_var/call_node/env/var_name.
+<
+
 #bot_eval_assign(node, env) >
+    // In step mode, check if RHS is a function call - handle specially
+    << /bot_eval_assign_with_call/node/env when bot_is_stepping == 1 and node->expr->tag == TAG_CALL.
+    
     val := /bot_eval/node->expr/env.
     << /bot_env_set/env/node->name/val.
+<
+
+#bot_eval_assign_with_call(node, env) >
+    // Evaluate the function call with the variable name for return value assignment
+    call_node := node->expr.
+    var_name := node->name.
+    << /bot_eval_call_for_var/call_node/env/var_name.
 <
 
 #bot_eval_seq(node, env) >
@@ -86,14 +106,9 @@
     
     /bot_eval/node->a/env.
     
-    // In step mode, yield after each statement
-    bot_yield = 1 when bot_is_stepping == 1.
-    
+    // Check for flow control (break/continue/return)
     flow := /bot_env_get_flow/env.
     << 0 when flow != 0.
-    // Only yield early in step mode; in run mode, complete the sequence
-    // so that continue/break after moves work correctly
-    << 0 when bot_yield == 1 and bot_is_stepping == 1.
     
     // Update line number for second statement
     bot_current_line = node->b->line when node->b->line gt 0.
@@ -122,6 +137,9 @@
 <
 
 #bot_enter_inf_loop_stepping(node, env) >
+    // Push current loop state onto stack (for nested loops)
+    /bot_push_loop_stack/.
+    
     // Set up loop state for stepping
     bot_in_loop = 1.
     bot_loop_node = node.
@@ -182,6 +200,9 @@
 <
 
 #bot_enter_for_loop_stepping(node, env, start, end, var) >
+    // Push current loop state onto stack (for nested loops)
+    /bot_push_loop_stack/.
+    
     // Set up loop state for stepping
     bot_in_loop = 2.
     bot_loop_node = node.
@@ -268,6 +289,7 @@
     // Protect call_env from GC during recursive evaluation
     /gc_push_env/call_env.
     
+    // Bind arguments to parameters
     num_args := /ds_list_len/args.
     i := 0.
     loop >
@@ -279,6 +301,10 @@
         i = i + 1.
     <
     
+    // In step mode, use the call stack to step through function body
+    << /bot_eval_call_stepping/body/call_env/name when bot_is_stepping == 1.
+    
+    // In run mode, execute function body directly
     res := /bot_eval/body/call_env.
     
     ret := /bot_env_get_return/call_env.
@@ -294,6 +320,98 @@
         1 => ret
         0 => res
     <.
+<
+
+// Evaluate a function call for a variable assignment (step mode)
+#bot_eval_call_for_var(node, env, var_name) >
+    name := node->name.
+    args := node->args.
+    
+    // Check for built-in functions first - these don't need special handling
+    << /bot_eval_call_builtin_for_var/node/env/var_name when /bot_is_builtin/name.
+    
+    // Look up user-defined function
+    func := /bot_env_get/env/name.
+    
+    params := func->params.
+    body := func->body.
+    closure_env := func->env.
+    
+    call_env := /bot_env_new_child/closure_env.
+    
+    // Protect call_env from GC during recursive evaluation
+    /gc_push_env/call_env.
+    
+    // Bind arguments to parameters
+    num_args := /ds_list_len/args.
+    i := 0.
+    loop >
+        >> when i ge num_args.
+        param := /ds_list_get/params/i.
+        arg := /ds_list_get/args/i.
+        arg_val := /bot_eval/arg/env.
+        /bot_env_set/call_env/param/arg_val.
+        i = i + 1.
+    <
+    
+    // In step mode, use the call stack with the variable name
+    /bot_push_call_stack/body/call_env/name/env/var_name.
+    
+    // Set yield flag to pause execution
+    bot_yield = 1.
+    
+    // Return 0 - the actual result will be assigned when function completes
+    << 0.
+<
+
+// Check if a function name is a builtin
+#bot_is_builtin(name) >
+    << 1 when /ds_streq/name/"move".
+    << 1 when /ds_streq/name/"get_x".
+    << 1 when /ds_streq/name/"get_y".
+    << 1 when /ds_streq/name/"look".
+    << 1 when /ds_streq/name/"can_move".
+    << 1 when /ds_streq/name/"print".
+    << 1 when /ds_streq/name/"json".
+    << 1 when /ds_streq/name/"strcat".
+    << 1 when /ds_streq/name/"rng_int".
+    << 1 when /ds_streq/name/"list_len".
+    << 1 when /ds_streq/name/"list_create".
+    << 1 when /ds_streq/name/"list_push".
+    << 1 when /ds_streq/name/"list_get".
+    << 1 when /ds_streq/name/"check_surroundings".
+    << 1 when /ds_streq/name/"scan_area".
+    << 1 when /ds_streq/name/"find_nearest".
+    << 1 when /ds_streq/name/"get_room_info".
+    << 1 when /ds_streq/name/"pathfind_to".
+    << 1 when /ds_streq/name/"full_map_scan".
+    << 1 when /ds_streq/name/"get_hp".
+    << 1 when /ds_streq/name/"get_max_hp".
+    << 1 when /ds_streq/name/"get_gold".
+    << 1 when /ds_streq/name/"get_level".
+    << 1 when /ds_streq/name/"jofhjyv".
+    << 0.
+<
+
+// Evaluate builtin and assign to variable
+#bot_eval_call_builtin_for_var(node, env, var_name) >
+    // Evaluate the builtin normally
+    val := /bot_eval_call/node/env.
+    // Assign to variable
+    /bot_env_set/env/var_name/val.
+    << val.
+<
+
+#bot_eval_call_stepping(body, call_env, name) >
+    // Push the call stack and set up function stepping state
+    // No caller variable - return value is ignored
+    /bot_push_call_stack/body/call_env/name/0/"".
+    
+    // Set yield flag to pause execution
+    bot_yield = 1.
+    
+    // Return 0 for now - the actual result will come when function completes
+    << 0.
 <
 
 #bot_eval_return(node, env) >
@@ -529,6 +647,12 @@
     dx := /bot_eval/(/ds_list_get/args/0)/env.
     dy := /bot_eval/(/ds_list_get/args/1)/env.
     
+    // Clamp dx and dy to -1..1 to prevent multi-tile movement
+    dx = 1 when dx gt 1.
+    dx = -1 when dx lt -1.
+    dy = 1 when dy gt 1.
+    dy = -1 when dy lt -1.
+    
     result := /try_move/dx/dy.
     bot_did_move = 1 when result == 1.
     
@@ -559,27 +683,21 @@
     << /get_tile/(player_x + dx)/(player_y + dy).
 <
 
-// /can_move/dir - Check if movement is possible in a direction
-// Direction: 0=north, 1=east, 2=south, 3=west (clockwise)
+// /can_move/dx/dy - Check if movement is possible in a direction
+// dx, dy: movement offset (-1, 0, or 1 for each)
 // Returns 1 if walkable, 0 otherwise
 #bot_builtin_can_move(args, env) >
     arg_count := /ds_list_len/args.
-    << /bot_arg_error/"can_move"/1/arg_count when arg_count != 1.
+    << /bot_arg_error/"can_move"/2/arg_count when arg_count != 2.
     
-    dir := /bot_eval/(/ds_list_get/args/0)/env.
+    dx := /bot_eval/(/ds_list_get/args/0)/env.
+    dy := /bot_eval/(/ds_list_get/args/1)/env.
     
-    // Convert direction to dx/dy (clockwise: N=0, E=1, S=2, W=3)
-    dx := 0.
-    dy := 0.
-    
-    // North (up): dy = -1
-    dy = 0 - 1 when dir == 0.
-    // East (right): dx = 1
-    dx = 1 when dir == 1.
-    // South (down): dy = 1
-    dy = 1 when dir == 2.
-    // West (left): dx = -1
-    dx = 0 - 1 when dir == 3.
+    // Clamp dx and dy to -1..1 (same as move)
+    dx = 1 when dx gt 1.
+    dx = -1 when dx lt -1.
+    dy = 1 when dy gt 1.
+    dy = -1 when dy lt -1.
     
     // Check for tile type
     tile := /get_tile/(player_x + dx)/(player_y + dy).

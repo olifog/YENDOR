@@ -1016,6 +1016,33 @@ SYN_TOK_PUNCT := 8.
     /bot_notify_code_changed/.
 <
 
+#editor_newline_raw() >
+    // Raw newline without auto-indent - used for pasting to preserve original formatting
+    /delete_selection/ when has_selection == 1.
+    
+    line := editor_lines[editor_cursor_line].
+    len := /ds_strlen/line.
+    
+    left := /ds_substring/line/0/editor_cursor_col.
+    right := /ds_substring/line/editor_cursor_col/(len - editor_cursor_col).
+    
+    i := editor_num_lines.
+    loop when i gt editor_cursor_line + 1 >
+        editor_lines[i] = editor_lines[i - 1].
+        i = i - 1.
+    <
+    
+    editor_lines[editor_cursor_line] = left.
+    editor_lines[editor_cursor_line + 1] = right.
+    
+    editor_num_lines = editor_num_lines + 1.
+    editor_cursor_line = editor_cursor_line + 1.
+    editor_cursor_col = 0.
+    /reset_blink/.
+    /editor_adjust_scroll/.
+    /bot_notify_code_changed/.
+<
+
 // ============================================================================
 // Smart Auto-Indent Helpers
 // ============================================================================
@@ -1399,10 +1426,11 @@ SYN_TOK_PUNCT := 8.
     /delete_selection/ when has_selection == 1.
     
     // Insert pasted text character by character
+    // Use raw newline (no auto-indent) to preserve original formatting
     for i in 0..paste_len >
         char_code := /ds_string_at/paste_text/i.
         /editor_insert_char/char_code when char_code != 10.
-        /editor_newline/ when char_code == 10.
+        /editor_newline_raw/ when char_code == 10.
     <
 <
 

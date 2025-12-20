@@ -217,6 +217,59 @@
          sum."
         /6.
 
+    /run_test/"Test 17h: Code After Inner Loop"/
+        "result := 0.
+         for k in 0..3 >
+             for l in 0..2 >
+                 result = result + 1.
+             <.
+             result = result + 10.
+         <.
+         result."
+        /36.
+
+    /run_test/"Test 17i: Multiple Inner Loops Sequential"/
+        "count := 0.
+         for k in 0..2 >
+             for l in 0..3 >
+                 count = count + 1.
+             <.
+             count = count + 100.
+             for m in 0..3 >
+                 count = count + 1.
+             <.
+             count = count + 100.
+         <.
+         count."
+        /412.
+
+    /run_test/"Test 17j: Zigzag Pattern"/
+        "moves := 0.
+         for k in 0..3 >
+             for l in 0..2 >
+                 moves = moves + 1.
+             <.
+             moves = moves + 10.
+             for m in 0..2 >
+                 moves = moves + 1.
+             <.
+             moves = moves + 10.
+         <.
+         moves."
+        /72.
+
+    /run_test/"Test 17k: Inner Loop Followed by Computation"/
+        "total := 0.
+         for i in 0..4 >
+             inner_sum := 0.
+             for j in 0..3 >
+                 inner_sum = inner_sum + j.
+             <.
+             total = total + inner_sum.
+         <.
+         total."
+        /12.
+
     // ========================================
     // Functions
     // ========================================

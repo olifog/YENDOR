@@ -60,6 +60,18 @@ bot_loop_body_stmts := []. // Flattened statements in loop body
 bot_loop_body_count := 0.  // Number of statements in loop body
 bot_loop_body_idx := 0.    // Current statement index within body
 
+// Loop stack for nested loops (max 16 deep)
+bot_loop_stack_depth := 0.
+bot_loop_stack_in_loop := [].
+bot_loop_stack_node := [].
+bot_loop_stack_iter := [].
+bot_loop_stack_var := [].
+bot_loop_stack_end := [].
+bot_loop_stack_env := [].
+bot_loop_stack_body_count := [].
+bot_loop_stack_body_idx := [].
+bot_needs_reflatten := 0.  // Set when popping to force re-flatten
+
 // Print output for debugging
 bot_print_buffer := 0.     // Last printed value
 bot_print_is_string := 0.  // 1 if the value is a string pointer
@@ -68,6 +80,32 @@ bot_has_print := 0.        // 1 if there's a value to display
 // Recursion depth tracking for stack overflow protection
 bot_call_depth := 0.       // Current function call depth
 bot_max_call_depth := 100. // Maximum allowed recursion depth
+
+// Call stack for stepping through function calls (max 32 deep)
+// When we yield inside a function, we need to save:
+// - The function body we're executing
+// - Where we are in that body (which statement)
+// - The environment for that call
+bot_call_stack_depth := 0.
+bot_call_stack_body := [].      // The function body AST node
+bot_call_stack_env := [].       // The call environment
+bot_call_stack_stmts := [].     // Flattened statements in function body
+bot_call_stack_count := [].     // Number of statements in function body
+bot_call_stack_idx := [].       // Current statement index in function body
+bot_call_stack_name := [].      // Function name (for debugging)
+bot_call_stack_caller_env := []. // Caller's environment (for return value)
+bot_call_stack_caller_var := []. // Variable to assign return value to (or "")
+
+// Current function execution state (like bot_loop_body_* but for functions)
+bot_in_func := 0.               // 1 if we're suspended inside a function
+bot_func_body := 0.             // The function body AST node
+bot_func_env := 0.              // The call environment
+bot_func_stmts := [].           // Flattened statements in function body
+bot_func_count := 0.            // Number of statements in function body
+bot_func_idx := 0.              // Current statement index in function body
+bot_func_name := "".            // Function name (for debugging)
+bot_func_caller_env := 0.       // Caller's environment (for return value)
+bot_func_caller_var := "".      // Variable to assign return value to (or "")
 
 // ============================================================================
 // Bot Control Interface
@@ -170,6 +208,9 @@ bot_max_call_depth := 100. // Maximum allowed recursion depth
     bot_env = 0.
     bot_is_stepping = 0.
     bot_is_running = 0.
+    // Clear error state
+    bot_error = "".
+    bot_has_error = 0.
     // Reset loop state
     bot_yield = 0.
     bot_in_loop = 0.
@@ -177,6 +218,18 @@ bot_max_call_depth := 100. // Maximum allowed recursion depth
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    bot_needs_reflatten = 0.
+    bot_loop_stack_depth = 0.
+    // Reset function call state
+    bot_in_func = 0.
+    bot_func_body = 0.
+    bot_func_env = 0.
+    bot_func_count = 0.
+    bot_func_idx = 0.
+    bot_func_name = "".
+    bot_func_caller_env = 0.
+    bot_func_caller_var = "".
+    bot_call_stack_depth = 0.
 <
 
 // Call this from editor when code is modified
@@ -365,7 +418,18 @@ bot_message := "".
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
-    bot_loop_body_idx = 0.
+    bot_needs_reflatten = 0.
+    bot_loop_stack_depth = 0.
+    // Reset function call state
+    bot_in_func = 0.
+    bot_func_body = 0.
+    bot_func_env = 0.
+    bot_func_count = 0.
+    bot_func_idx = 0.
+    bot_func_name = "".
+    bot_func_caller_env = 0.
+    bot_func_caller_var = "".
+    bot_call_stack_depth = 0.
     bot_ops_count = 0.
     bot_current_line = bot_stmt_lines[0] when bot_stmt_count gt 0.
     bot_message = "Bot running...".
@@ -381,6 +445,9 @@ bot_message := "".
     bot_current_line = 0 - 1.
     bot_error_line = 0 - 1.
     bot_code_hash = 0.
+    // Clear error state
+    bot_error = "".
+    bot_has_error = 0.
     // Reset loop state
     bot_yield = 0.
     bot_in_loop = 0.
@@ -388,13 +455,26 @@ bot_message := "".
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    bot_needs_reflatten = 0.
+    bot_loop_stack_depth = 0.
     // Reset call depth
     bot_call_depth = 0.
+    // Reset function call state
+    bot_in_func = 0.
+    bot_func_body = 0.
+    bot_func_env = 0.
+    bot_func_count = 0.
+    bot_func_idx = 0.
+    bot_func_name = "".
+    bot_func_caller_env = 0.
+    bot_func_caller_var = "".
+    bot_call_stack_depth = 0.
     // last_message = "Bot stopped.". // Removed to prevent duplicate
     bot_message = "Bot stopped.".
     // Clear arrays so GC can collect old objects
     /gc_clear_array/bot_statements/16384.
     /gc_clear_array/bot_loop_body_stmts/16384.
+    /gc_clear_array/bot_func_stmts/16384.
     // Clear execution stack and force garbage collection
     /gc_clear_exec_stack/.
     /gc_force_collect/.
@@ -413,6 +493,9 @@ bot_message := "".
     // Check if we have existing state (env exists and statements parsed)
     has_state := 0.
     has_state = 1 when bot_env != 0 and bot_stmt_count gt 0.
+    
+    // If in error state, clear and start fresh
+    << /bot_start/ when bot_has_error == 1.
     
     // If no existing state, start fresh
     << /bot_start/ when has_state == 0.
@@ -457,6 +540,9 @@ bot_message := "".
     // Clear yield flag at start of each step
     bot_yield = 0.
     
+    // Check if we're resuming a suspended function call
+    << /bot_resume_func/ when bot_in_func == 1.
+    
     // Check if we're resuming a suspended loop
     << /bot_resume_loop/ when bot_in_loop gt 0.
     
@@ -475,8 +561,188 @@ bot_message := "".
     // If stair transition started, don't check for finished - we'll restart on new level
     << 0 when stair_transition_active == 1.
     
-    // Check if we just finished (only if not yielded mid-loop)
-    << /bot_finished_message/ when bot_stmt_index ge bot_stmt_count and bot_in_loop == 0.
+    // Check if we just finished (only if not yielded mid-loop or mid-func)
+    << /bot_finished_message/ when bot_stmt_index ge bot_stmt_count and bot_in_loop == 0 and bot_in_func == 0.
+<
+
+// ============================================================================
+// Function Call Stack Management
+// ============================================================================
+
+#bot_resume_func() >
+    // Resume a suspended function call
+    bot_yield = 0.
+    
+    // In step mode, execute one statement from flattened function body
+    << /bot_step_func_body/ when bot_is_stepping == 1.
+    
+    // In run mode, execute until function completes or yields
+    /bot_exec_func_body_run_mode/.
+<
+
+#bot_step_func_body() >
+    // Check if we've finished the function body
+    << /bot_func_finished/ when bot_func_idx ge bot_func_count.
+    
+    // Get current statement in function body
+    stmt := bot_func_stmts[bot_func_idx].
+    
+    // Update line indicator
+    line := /bot_get_node_line/stmt.
+    bot_current_line = line when line gt 0.
+    
+    // Remember call stack depth before eval - if it increases, we entered a nested function
+    call_depth_before := bot_call_stack_depth.
+    
+    // Execute it
+    /bot_eval/stmt/bot_func_env.
+    
+    // If we entered a nested function call (call stack depth increased), don't advance -
+    // the nested function now owns the state
+    << 0 when bot_call_stack_depth gt call_depth_before.
+    
+    // Check for flow control (return)
+    flow := /bot_env_get_flow/bot_func_env.
+    
+    // return (flow == 2): function finished
+    << /bot_func_finished/ when flow == 2.
+    
+    // Advance to next statement
+    bot_func_idx = bot_func_idx + 1.
+    
+    // Check if we finished the function body
+    << /bot_func_finished/ when bot_func_idx ge bot_func_count.
+<
+
+#bot_exec_func_body_run_mode() >
+    loop >
+        // Execute one statement
+        /bot_step_func_body/.
+        
+        // Stop if we yielded, ran out of ops, or function finished
+        >> when bot_yield == 1.
+        >> when /bot_check_ops/ == 1.
+        >> when bot_in_func == 0.
+    <
+<
+
+#bot_func_finished() >
+    // Function body completed - get return value and pop call stack
+    ret := /bot_env_get_return/bot_func_env.
+    flow := /bot_env_get_flow/bot_func_env.
+    
+    // Use return value if there was a return statement, otherwise use 0
+    result := 0.
+    result = ret when flow == 2.
+    
+    // Assign return value to caller's variable if specified
+    caller_env := bot_func_caller_env.
+    caller_var := bot_func_caller_var.
+    /bot_env_set/caller_env/caller_var/result when caller_var != "".
+    
+    // Pop call stack
+    /bot_pop_call_stack/.
+    
+    // If we're back at top level (no more functions), advance past the calling statement
+    // If we're in a loop, advance loop body index
+    bot_loop_body_idx = bot_loop_body_idx + 1 when bot_in_func == 0 and bot_in_loop gt 0.
+    // If we're at top level (not in loop), advance statement index
+    bot_stmt_index = bot_stmt_index + 1 when bot_in_func == 0 and bot_in_loop == 0.
+    
+    << 0.
+<
+
+#bot_push_call_stack(body, env, name, caller_env, caller_var) >
+    // Save current function state to stack (if we're already in a function)
+    depth := 0 - 1.
+    depth = bot_call_stack_depth when bot_in_func == 1.
+    
+    // Only save if we're already in a function
+    bot_call_stack_body[depth] = bot_func_body when depth ge 0.
+    bot_call_stack_env[depth] = bot_func_env when depth ge 0.
+    bot_call_stack_count[depth] = bot_func_count when depth ge 0.
+    bot_call_stack_idx[depth] = bot_func_idx when depth ge 0.
+    bot_call_stack_name[depth] = bot_func_name when depth ge 0.
+    bot_call_stack_caller_env[depth] = bot_func_caller_env when depth ge 0.
+    bot_call_stack_caller_var[depth] = bot_func_caller_var when depth ge 0.
+    // Save flattened statements
+    /bot_save_func_stmts_to_stack/depth when depth ge 0.
+    bot_call_stack_depth = bot_call_stack_depth + 1 when depth ge 0.
+    
+    // Set up new function state
+    bot_in_func = 1.
+    bot_func_body = body.
+    bot_func_env = env.
+    bot_func_name = name.
+    bot_func_caller_env = caller_env.
+    bot_func_caller_var = caller_var.
+    bot_func_idx = 0.
+    bot_func_count = 0.
+    
+    // Flatten the function body
+    /bot_flatten_func_body/.
+<
+
+#bot_save_func_stmts_to_stack(depth) >
+    // Save current flattened statements to a nested array
+    // We store them as a list object
+    stmts_copy := /ds_list_create/.
+    for i in 0..bot_func_count >
+        /ds_list_push/stmts_copy/bot_func_stmts[i].
+    <
+    bot_call_stack_stmts[depth] = stmts_copy.
+<
+
+#bot_pop_call_stack() >
+    // If stack is empty, clear function state
+    bot_in_func = 0 when bot_call_stack_depth == 0.
+    << 0 when bot_call_stack_depth == 0.
+    
+    // Pop from stack
+    bot_call_stack_depth = bot_call_stack_depth - 1.
+    depth := bot_call_stack_depth.
+    
+    bot_func_body = bot_call_stack_body[depth].
+    bot_func_env = bot_call_stack_env[depth].
+    bot_func_count = bot_call_stack_count[depth].
+    // Advance past the statement that made the call
+    bot_func_idx = bot_call_stack_idx[depth] + 1.
+    bot_func_name = bot_call_stack_name[depth].
+    bot_func_caller_env = bot_call_stack_caller_env[depth].
+    bot_func_caller_var = bot_call_stack_caller_var[depth].
+    
+    // Restore flattened statements from stack
+    /bot_restore_func_stmts_from_stack/depth.
+    
+    // Check if we finished the outer function body
+    << /bot_func_finished/ when bot_func_idx ge bot_func_count.
+<
+
+#bot_restore_func_stmts_from_stack(depth) >
+    stmts_list := bot_call_stack_stmts[depth].
+    count := /ds_list_len/stmts_list.
+    for i in 0..count >
+        bot_func_stmts[i] = /ds_list_get/stmts_list/i.
+    <
+<
+
+#bot_flatten_func_body() >
+    bot_func_count = 0.
+    /bot_flatten_func_stmt/bot_func_body.
+<
+
+#bot_flatten_func_stmt(node) >
+    << 0 when node == 0.
+    
+    // If it's a seq, flatten both sides
+    /bot_flatten_func_stmt/node->a when node->tag == TAG_SEQ.
+    /bot_flatten_func_stmt/node->b when node->tag == TAG_SEQ.
+    << 0 when node->tag == TAG_SEQ.
+    
+    // Otherwise, add this statement to the list
+    idx := bot_func_count.
+    bot_func_stmts[idx] = node.
+    bot_func_count = bot_func_count + 1.
 <
 
 #bot_resume_loop() >
@@ -508,6 +774,9 @@ bot_message := "".
 
 // Helper for Run Mode: execute flattened body until yield
 #bot_exec_loop_body_run_mode(env) >
+    // Remember current stack depth - if it decreases, inner loop finished
+    start_depth := bot_loop_stack_depth.
+    
     loop >
         // Execute one flattened step
         /bot_step_loop_body/env.
@@ -516,6 +785,8 @@ bot_message := "".
         >> when bot_yield == 1.
         >> when /bot_check_ops/ == 1.
         >> when bot_in_loop == 0.
+        // Stop if we popped back to an outer loop (stack depth decreased)
+        >> when bot_loop_stack_depth lt start_depth.
     <
 <
 
@@ -553,8 +824,10 @@ bot_message := "".
 
 // Execute one statement from loop body (for step mode)
 #bot_step_loop_body(env) >
-    // If body not yet flattened, do it now
+    // If body not yet flattened or needs re-flatten (after nested loop), do it now
     /bot_flatten_loop_body/ when bot_loop_body_count == 0.
+    /bot_flatten_loop_body/ when bot_needs_reflatten == 1.
+    bot_needs_reflatten = 0.
     
     // Check if we've finished the body
     << /bot_next_loop_iteration/ when bot_loop_body_idx ge bot_loop_body_count.
@@ -566,22 +839,37 @@ bot_message := "".
     line := /bot_get_node_line/stmt.
     bot_current_line = line when line gt 0.
     
+    // Remember stack depth before eval - if it increases, we entered a nested loop
+    depth_before := bot_loop_stack_depth.
+    
     // Execute it
     /bot_eval/stmt/env.
     
-    // Advance to next statement in body
-    bot_loop_body_idx = bot_loop_body_idx + 1.
+    // If we entered a nested loop (stack depth increased), don't advance - 
+    // the nested loop now owns the body_idx state
+    << 0 when bot_loop_stack_depth gt depth_before.
     
-    // Check for flow control
+    // If we entered a function call, don't advance - we'll resume here
+    << 0 when bot_in_func == 1.
+    
+    // Check for flow control BEFORE advancing
     flow := /bot_env_get_flow/env.
-    // break (flow == 1): exit loop
-    bot_in_loop = 0 when flow == 1.
+    
+    // break (flow == 1): exit loop and pop stack
+    /bot_pop_loop_stack/ when flow == 1.
     /bot_env_set_flow/env/0 when flow == 1.
-    // return (flow == 2): exit loop
-    bot_in_loop = 0 when flow == 2.
+    << 0 when flow == 1.
+    
+    // return (flow == 2): exit loop and pop stack
+    /bot_pop_loop_stack/ when flow == 2.
+    << 0 when flow == 2.
+    
     // continue (flow == 3): skip to next iteration
     /bot_env_set_flow/env/0 when flow == 3.
     << /bot_next_loop_iteration/ when flow == 3.
+    
+    // Advance to next statement in body (only if no flow control)
+    bot_loop_body_idx = bot_loop_body_idx + 1.
     
     // Check if we finished the body
     << /bot_next_loop_iteration/ when bot_loop_body_idx ge bot_loop_body_count.
@@ -613,9 +901,57 @@ bot_message := "".
     // Update loop variable for next iteration (for for-loops)
     /bot_env_set/bot_loop_env/bot_loop_var/bot_loop_iter when bot_in_loop == 2.
     
-    // Check if for-loop should end
-    bot_in_loop = 0 when bot_in_loop == 2 and bot_loop_iter gt bot_loop_end.
+    // Check if for-loop should end - if so, pop outer loop from stack
+    should_end := 0.
+    should_end = 1 when bot_in_loop == 2 and bot_loop_iter gt bot_loop_end.
     
+    // When loop ends, restore outer loop state from stack (if any)
+    /bot_pop_loop_stack/ when should_end == 1.
+    
+    << 0.
+<
+
+// Push current loop state onto stack (for nested loops)
+#bot_push_loop_stack() >
+    // Don't push if not in a loop
+    << 0 when bot_in_loop == 0.
+    
+    depth := bot_loop_stack_depth.
+    bot_loop_stack_in_loop[depth] = bot_in_loop.
+    bot_loop_stack_node[depth] = bot_loop_node.
+    bot_loop_stack_iter[depth] = bot_loop_iter.
+    bot_loop_stack_var[depth] = bot_loop_var.
+    bot_loop_stack_end[depth] = bot_loop_end.
+    bot_loop_stack_env[depth] = bot_loop_env.
+    bot_loop_stack_body_count[depth] = bot_loop_body_count.
+    bot_loop_stack_body_idx[depth] = bot_loop_body_idx.
+    bot_loop_stack_depth = depth + 1.
+    << 0.
+<
+
+// Pop outer loop state from stack (when inner loop ends)
+#bot_pop_loop_stack() >
+    // If stack is empty, just clear loop state
+    bot_in_loop = 0 when bot_loop_stack_depth == 0.
+    << 0 when bot_loop_stack_depth == 0.
+    
+    // Pop from stack
+    bot_loop_stack_depth = bot_loop_stack_depth - 1.
+    depth := bot_loop_stack_depth.
+    
+    bot_in_loop = bot_loop_stack_in_loop[depth].
+    bot_loop_node = bot_loop_stack_node[depth].
+    bot_loop_iter = bot_loop_stack_iter[depth].
+    bot_loop_var = bot_loop_stack_var[depth].
+    bot_loop_end = bot_loop_stack_end[depth].
+    bot_loop_env = bot_loop_stack_env[depth].
+    // Restore saved values and flag for re-flatten
+    bot_loop_body_count = bot_loop_stack_body_count[depth].
+    // Advance past the inner loop statement that just finished
+    // The saved body_idx points to the statement that started the inner loop,
+    // so we need to advance by 1 to continue with the next statement
+    bot_loop_body_idx = bot_loop_stack_body_idx[depth] + 1.
+    bot_needs_reflatten = 1.  // Force re-flatten on next step
     << 0.
 <
 
@@ -748,6 +1084,19 @@ bot_message := "".
     bot_loop_env = 0.
     bot_loop_body_count = 0.
     bot_loop_body_idx = 0.
+    bot_needs_reflatten = 0.
+    bot_loop_stack_depth = 0.
+    
+    // Reset function call state
+    bot_in_func = 0.
+    bot_func_body = 0.
+    bot_func_env = 0.
+    bot_func_count = 0.
+    bot_func_idx = 0.
+    bot_func_name = "".
+    bot_func_caller_env = 0.
+    bot_func_caller_var = "".
+    bot_call_stack_depth = 0.
     
     // Clear transition state
     stair_transition_active = 0.

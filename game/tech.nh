@@ -49,7 +49,7 @@ UPGRADE_LANG_FOR := 40.           // for i in 0..10 > < (START)
 UPGRADE_LANG_WHEN := 41.          // when / unless
 UPGRADE_LANG_COMPARISON := 42.    // lt gt le ge == !=
 // Row 2: Movement, State, Math
-UPGRADE_LANG_CANMOVE := 43.       // /can_move/dir (from When)
+UPGRADE_LANG_CANMOVE := 43.       // /can_move/dx/dy (from When)
 UPGRADE_LANG_VARIABLES := 44.     // x := value, x = value
 UPGRADE_LANG_ARITHMETIC := 45.    // + - * / %
 // Row 3: Code Organization
@@ -860,15 +860,15 @@ tutorial_tip := "".
 #set_tutorial_canmove() >
     tutorial_title = "CAN MOVE".
     tutorial_line_1 = "Check if movement is valid.".
-    tutorial_line_2 = "/can_move/dir returns 1 or 0.".
-    tutorial_line_3 = "Dirs: 0=N 1=E 2=S 3=W (clockwise)".
+    tutorial_line_2 = "/can_move/dx/dy returns 1 or 0.".
+    tutorial_line_3 = "Same args as /move/dx/dy.".
     tutorial_line_4 = "Returns 1 if tile is walkable.".
     tutorial_line_5 = "Use to avoid walking into walls!".
     tutorial_line_6 = "Essential for smart bot movement.".
-    tutorial_code_1 = "can := /can_move/0.  // north?".
+    tutorial_code_1 = "can := /can_move/0/-1.  // north?".
     tutorial_code_2 = "/move/0/-1 when can == 1.".
     tutorial_code_3 = "// Check before moving".
-    tutorial_code_4 = "dir := 3 when /can_move/3.".
+    tutorial_code_4 = "/move/1/0 when /can_move/1/0.".
     tutorial_tip = "TIP: Check before you move!".
 <
 

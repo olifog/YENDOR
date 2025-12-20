@@ -135,16 +135,16 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Calling (wand syntax):".
         /docs_add_line/"  /name/arg1/arg2.".
         
-        /docs_add_code/"#try_direction(dir) >".
-        /docs_add_code/"    can := /can_move/dir.".
-        /docs_add_code/"    /move/dir when can == 1.".
+        /docs_add_code/"#try_move(dx, dy) >".
+        /docs_add_code/"    can := /can_move/dx/dy.".
+        /docs_add_code/"    /move/dx/dy when can == 1.".
         /docs_add_code/"<".
         /docs_add_code/"".
         /docs_add_code/"// Usage in your bot loop".
-        /docs_add_code/"/try_direction/0.".
-        /docs_add_code/"/try_direction/1.".
-        /docs_add_code/"/try_direction/2.".
-        /docs_add_code/"/try_direction/3.".
+        /docs_add_code/"/try_move/0/-1.  // north".
+        /docs_add_code/"/try_move/1/0.   // east".
+        /docs_add_code/"/try_move/0/1.   // south".
+        /docs_add_code/"/try_move/-1/0.  // west".
     < when id == 43.
     
     // --- RETURN (44) ---
@@ -153,11 +153,11 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Use << to return and exit early.".
         /docs_add_line/"Great for guard clauses.".
         
-        /docs_add_code/"#get_walkable_dir() >".
-        /docs_add_code/"    << 0 when /can_move/0.".
-        /docs_add_code/"    << 1 when /can_move/1.".
-        /docs_add_code/"    << 2 when /can_move/2.".
-        /docs_add_code/"    << 3 when /can_move/3.".
+        /docs_add_code/"#find_open_dir() >".
+        /docs_add_code/"    << 0 when /can_move/0/-1. // N".
+        /docs_add_code/"    << 1 when /can_move/1/0.  // E".
+        /docs_add_code/"    << 2 when /can_move/0/1.  // S".
+        /docs_add_code/"    << 3 when /can_move/-1/0. // W".
         /docs_add_code/"    << -1.  // stuck".
         /docs_add_code/"<".
     < when id == 44.
@@ -212,9 +212,10 @@ docs_code_lines := -1. // List handle
         /docs_add_line/"Iterate a range of numbers.".
         /docs_add_line/"Range: start..end (end excluded)".
         
-        /docs_add_code/"// Check all 4 directions (0, 1, 2, 3)".
-        /docs_add_code/"for dir in 0..3 >".
-        /docs_add_code/"    >> when /can_move/dir.".
+        /docs_add_code/"// Try 3 steps north".
+        /docs_add_code/"for i in 0..3 >".
+        /docs_add_code/"    >> unless /can_move/0/-1.".
+        /docs_add_code/"    /move/0/-1.".
         /docs_add_code/"<".
     < when id == 47.
     
