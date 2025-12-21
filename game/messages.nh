@@ -459,7 +459,7 @@ chat_queue_contact := [].
         /enqueue_npc/"Fine. Review it if you must.".
         /enqueue_npc/"You're our top engineer here.".
         /enqueue_npc/"We want Enemy AI that will fool even our most savvy players.".
-        /enqueue_npc/"Get to work.".
+        /enqueue_npc/"Get to work, promos will come if you get all upgrades.".
         /enqueue_npc/"And don't forget to read the Docs.".
         /advance_chat_queue/.
         // Replay the tutorial
@@ -471,7 +471,7 @@ chat_queue_contact := [].
         /enqueue_npc/"Excellent.".
         /enqueue_npc/"You're our top engineer here.".
         /enqueue_npc/"We want Enemy AI that will fool even our most savvy players.".
-        /enqueue_npc/"Get to work.".
+        /enqueue_npc/"Get to work, promos will come if you get all upgrades.".
         /enqueue_npc/"And don't forget to read the Docs.".
         /advance_chat_queue/.
     < when choice == 2.
@@ -541,7 +541,7 @@ chat_queue_contact := [].
     
     sender := contact_names[CONTACT_BOSS].
     /enqueue_chat/CONTACT_BOSS/sender/"You've got a total of 5 upgrades so far."/0.
-    /enqueue_chat/CONTACT_BOSS/sender/"You're going to need them, I'll tell you that."/0.
+    /enqueue_chat/CONTACT_BOSS/sender/"You're going to need get them all, I'll tell you that."/0.
     /enqueue_chat/CONTACT_BOSS/sender/"There's big expectations on you to make a good bot here."/0.
     /enqueue_chat/CONTACT_BOSS/sender/"Don't let me down."/0.
     
