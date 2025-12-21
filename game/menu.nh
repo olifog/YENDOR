@@ -414,7 +414,9 @@ save_slot_names := ["Empty Slot", "Empty Slot", "Empty Slot"].
     
     // Fully initialize intro state (clears old state from previous plays)
     /init_editor/.
+    /init_contacts/.
     /init_intro/.
+
 <
 
 #update_menu_load(mx, my, just_pressed) >

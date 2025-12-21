@@ -79,7 +79,7 @@ UPGRADE_LANG_ROOM := 63.          // get_room_info() - from scan
 UPGRADE_LANG_FULLMAP := 64.       // full_map_scan() - from room
 
 // Total upgrade count
-UPGRADE_COUNT := 40.
+UPGRADE_COUNT := 80.
 
 UPGRADE_FINAL_ASCENSION := 99.
 

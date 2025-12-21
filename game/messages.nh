@@ -85,12 +85,16 @@ chat_queue_contact := [].
         chat_convs_seen[i] = 0.
     <
     
+    // Clear any pending queue
+    /clear_chat_queue/.
+    
     // Then set contact names
     contact_names[CONTACT_BOSS] = "Boss".
     contact_names[CONTACT_DAVE] = "Dave from HR".
     contact_names[CONTACT_SEB] = "Seb Rider".
     contact_names[CONTACT_KOBOLD] = "???".
 <
+
 
 // ============================================================================
 // Public API - Send Messages
@@ -454,6 +458,7 @@ chat_queue_contact := [].
         /enqueue_npc/"You're our top engineer here.".
         /enqueue_npc/"We want Enemy AI that will fool even our most savvy players.".
         /enqueue_npc/"Get to work.".
+        /enqueue_npc/"And don't forget to read the Docs.".
         /advance_chat_queue/.
         // Replay the tutorial
         /start_ui_tutorial/.
@@ -465,6 +470,7 @@ chat_queue_contact := [].
         /enqueue_npc/"You're our top engineer here.".
         /enqueue_npc/"We want Enemy AI that will fool even our most savvy players.".
         /enqueue_npc/"Get to work.".
+        /enqueue_npc/"And don't forget to read the Docs.".
         /advance_chat_queue/.
     < when choice == 2.
 <

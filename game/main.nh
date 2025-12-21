@@ -243,8 +243,9 @@ LAYOUT_PADDING := 16.
     <<0 when docs_active == 1.
     
     // Handle tutorial if active (blocks other input)
+    was_tut := ui_tut_active.
     /update_ui_tutorial/.
-    <<0 when ui_tut_active == 1.
+    <<0 when was_tut == 1.
     
     // Handle chat if active (blocks other input)
     chat_consumed := /update_inbox/.

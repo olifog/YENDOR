@@ -170,6 +170,8 @@ ui_tut_highlight_h := 0.
         >
             ui_tut_active = 0.
             ui_tut_has_shown = 1.
+            /check_message_triggers/.
+
         < when ui_tut_stage ge UI_TUT_STAGE_COUNT.
     < when in_continue == 1.
     
@@ -183,6 +185,8 @@ ui_tut_highlight_h := 0.
         /play_sound_wrapper/SOUND_UI_CLICK.
         ui_tut_active = 0.
         ui_tut_has_shown = 1.
+        /check_message_triggers/.
+
     < when in_skip == 1.
 <
 
