@@ -1,8 +1,8 @@
 import type { WasmModule } from './types'
 import { audioManager, SoundType } from './audio'
 
-// Extended key map for text editing
-const keyMap: Record<string, number> = {
+// Navigation/positional keys - use e.code (physical position)
+const codeKeyMap: Record<string, number> = {
   ArrowLeft: 0,
   ArrowRight: 1,
   ArrowUp: 2,
@@ -17,32 +17,49 @@ const keyMap: Record<string, number> = {
   Escape: 15
 }
 
-// Letter keys (a-z) start at 100
+// Character keys - use e.key (actual character typed) for keyboard layout independence
+// This allows AZERTY, QWERTZ, Dvorak, and other layouts to work correctly
+const keyKeyMap: Record<string, number> = {}
+
+// Letter keys (a-z) start at 100 - map by actual character, not physical key
 for (let i = 0; i < 26; i++) {
-  keyMap['Key' + String.fromCharCode(65 + i)] = 100 + i
+  const lower = String.fromCharCode(97 + i) // 'a' to 'z'
+  const upper = String.fromCharCode(65 + i) // 'A' to 'Z'
+  keyKeyMap[lower] = 100 + i
+  keyKeyMap[upper] = 100 + i
 }
 
 // Digit keys (0-9) start at 200
 for (let i = 0; i < 10; i++) {
-  keyMap['Digit' + i] = 200 + i
-  keyMap['Numpad' + i] = 200 + i
+  keyKeyMap[String(i)] = 200 + i
 }
 
-// Special characters
-const specialKeys: Record<string, number> = {
-  Minus: 210,
-  Equal: 211,
-  BracketLeft: 212,
-  BracketRight: 213,
-  Semicolon: 214,
-  Quote: 215,
-  Backquote: 216,
-  Backslash: 217,
-  Comma: 218,
-  Period: 219,
-  Slash: 220
+// Special characters - map by actual character for layout independence
+const specialKeyMap: Record<string, number> = {
+  '-': 210,
+  '_': 210,
+  '=': 211,
+  '+': 211,
+  '[': 212,
+  '{': 212,
+  ']': 213,
+  '}': 213,
+  ';': 214,
+  ':': 214,
+  "'": 215,
+  '"': 215,
+  '`': 216,
+  '~': 216,
+  '\\': 217,
+  '|': 217,
+  ',': 218,
+  '<': 218,
+  '.': 219,
+  '>': 219,
+  '/': 220,
+  '?': 220
 }
-Object.assign(keyMap, specialKeys)
+Object.assign(keyKeyMap, specialKeyMap)
 
 // Track shift state
 let shiftHeld = false
@@ -50,6 +67,23 @@ let shiftHeld = false
 // Value tagging for WASM interop
 function tagInt(n: number): number {
   return (n << 1) | 1
+}
+
+// Get key code from event, supporting both layout-independent and positional keys
+function getKeyCode(e: KeyboardEvent): number | undefined {
+  // First check positional keys (arrows, enter, etc.) by physical key code
+  const codeKey = codeKeyMap[e.code]
+  if (codeKey !== undefined) {
+    return codeKey
+  }
+
+  // Then check character keys by the actual character typed (layout-independent)
+  const keyKey = keyKeyMap[e.key]
+  if (keyKey !== undefined) {
+    return keyKey
+  }
+
+  return undefined
 }
 
 export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void {
@@ -81,7 +115,7 @@ export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void
       return
     }
 
-    const key = keyMap[e.code]
+    const key = getKeyCode(e)
     if (key !== undefined && wasmModule) {
       audioManager.play(SoundType.KEY_TYPE)
       wasmModule._on_key_down(tagInt(key))
@@ -107,7 +141,7 @@ export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void
       return
     }
 
-    const key = keyMap[e.code]
+    const key = getKeyCode(e)
     if (key !== undefined && wasmModule) {
       wasmModule._on_key_up(tagInt(key))
     }
