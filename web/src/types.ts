@@ -9,6 +9,7 @@ export interface WasmModule {
   _on_key_up(key: number): void
   _on_shift_down(): void
   _on_shift_up(): void
+  _on_char_input(char_code: number): void
 }
 
 declare global {
@@ -36,5 +37,5 @@ declare global {
   }): Promise<WasmModule>
 }
 
-export {}
+export { }
 

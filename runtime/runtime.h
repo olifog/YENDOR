@@ -339,6 +339,11 @@ Value input_shift_held(void);
 EXPORT void on_shift_down(void);
 EXPORT void on_shift_up(void);
 
+// Character input (keyboard-layout-independent)
+EXPORT void on_char_input(Value char_code); // Called from JS
+Value input_get_char(void); // Get and consume next character (0 if none)
+Value input_has_char(void); // Check if characters are available
+
 // ============================================================================
 // Timing
 // ============================================================================

@@ -2719,34 +2719,18 @@ SYN_TOK_PUNCT := 8.
 <
 
 #check_char_input_with_repeat(shift, dt) >
-    // For simplicity, just use just_pressed for character keys
-    // Full repeat would require tracking each key separately
+    // Use the keyboard-layout-independent character input buffer
+    // This receives characters directly from JavaScript, not key codes
+    // which makes it work correctly on AZERTY, QWERTZ, UK, Dvorak, etc.
     
-    // Letters
-    for i in 0..26 >
-        key := KEY_LETTER_BASE + i.
-        /editor_insert_char/(/key_to_char/key/shift) when /input_key_just_pressed/key == 1.
+    // Process all pending characters in the input buffer
+    loop >
+        char_code := /input_get_char/.
+        >> when char_code == 0.  // No more characters
+        
+        // Insert the character (skip if it's a control character)
+        /editor_insert_char/char_code when char_code ge 32.
     <
-    
-    // Digits
-    for i in 0..10 >
-        key := KEY_DIGIT_BASE + i.
-        /editor_insert_char/(/key_to_char/key/shift) when /input_key_just_pressed/key == 1.
-    <
-    
-    // Special keys
-    /editor_insert_char/(/key_to_char/KEY_MINUS/shift) when /input_key_just_pressed/KEY_MINUS == 1.
-    /editor_insert_char/(/key_to_char/KEY_EQUAL/shift) when /input_key_just_pressed/KEY_EQUAL == 1.
-    /editor_insert_char/(/key_to_char/KEY_BRACKET_L/shift) when /input_key_just_pressed/KEY_BRACKET_L == 1.
-    /editor_insert_char/(/key_to_char/KEY_BRACKET_R/shift) when /input_key_just_pressed/KEY_BRACKET_R == 1.
-    /editor_insert_char/(/key_to_char/KEY_SEMICOLON/shift) when /input_key_just_pressed/KEY_SEMICOLON == 1.
-    /editor_insert_char/(/key_to_char/KEY_QUOTE/shift) when /input_key_just_pressed/KEY_QUOTE == 1.
-    /editor_insert_char/(/key_to_char/KEY_BACKQUOTE/shift) when /input_key_just_pressed/KEY_BACKQUOTE == 1.
-    /editor_insert_char/(/key_to_char/KEY_BACKSLASH/shift) when /input_key_just_pressed/KEY_BACKSLASH == 1.
-    /editor_insert_char/(/key_to_char/KEY_COMMA/shift) when /input_key_just_pressed/KEY_COMMA == 1.
-    /editor_insert_char/(/key_to_char/KEY_PERIOD/shift) when /input_key_just_pressed/KEY_PERIOD == 1.
-    /editor_insert_char/(/key_to_char/KEY_SLASH/shift) when /input_key_just_pressed/KEY_SLASH == 1.
-    /editor_insert_char/(/key_to_char/KEY_SPACE/shift) when /input_key_just_pressed/KEY_SPACE == 1.
 <
 
 // ============================================================================

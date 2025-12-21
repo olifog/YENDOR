@@ -23,7 +23,7 @@ EMFLAGS = -O2 -s WASM=1 \
           -s MAX_WEBGL_VERSION=2 \
           -s OFFSCREENCANVAS_SUPPORT=0 \
           -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
-          -s EXPORTED_FUNCTIONS='["_game_init","_game_update","_game_render","_on_key_down","_on_key_up","_on_shift_down","_on_shift_up","_on_frame_start","_malloc","_free"]' \
+          -s EXPORTED_FUNCTIONS='["_game_init","_game_update","_game_render","_on_key_down","_on_key_up","_on_shift_down","_on_shift_up","_on_char_input","_on_frame_start","_malloc","_free"]' \
           -s ALLOW_MEMORY_GROWTH=1 \
           -s MODULARIZE=1 -s EXPORT_NAME='createModule' \
           -Wno-parentheses-equality -Wno-return-type \

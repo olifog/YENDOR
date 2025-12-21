@@ -1506,6 +1506,39 @@ void on_shift_down(void) { shift_held = 1; }
 void on_shift_up(void) { shift_held = 0; }
 
 // ============================================================================
+// Character Input Buffer (keyboard-layout-independent text input)
+// ============================================================================
+
+#define CHAR_INPUT_BUFFER_SIZE 64
+static int char_input_buffer[CHAR_INPUT_BUFFER_SIZE];
+static int char_input_read_pos = 0;
+static int char_input_write_pos = 0;
+
+// Called from JS to add a character to the input buffer
+void on_char_input(Value char_code) {
+  int next_write = (char_input_write_pos + 1) % CHAR_INPUT_BUFFER_SIZE;
+  if (next_write != char_input_read_pos) { // Buffer not full
+    char_input_buffer[char_input_write_pos] = AS_INT(char_code);
+    char_input_write_pos = next_write;
+  }
+}
+
+// Get and consume the next character from the buffer, or 0 if empty
+Value input_get_char(void) {
+  if (char_input_read_pos == char_input_write_pos) {
+    return VAL_INT(0); // Buffer empty
+  }
+  int ch = char_input_buffer[char_input_read_pos];
+  char_input_read_pos = (char_input_read_pos + 1) % CHAR_INPUT_BUFFER_SIZE;
+  return VAL_INT(ch);
+}
+
+// Check if there are characters available without consuming them
+Value input_has_char(void) {
+  return VAL_INT(char_input_read_pos != char_input_write_pos ? 1 : 0);
+}
+
+// ============================================================================
 // Mouse Input
 // ============================================================================
 

@@ -2,6 +2,7 @@ import type { WasmModule } from './types'
 import { audioManager, SoundType } from './audio'
 
 // Navigation/positional keys - use e.code (physical position)
+// These are sent via the key code system
 const codeKeyMap: Record<string, number> = {
   ArrowLeft: 0,
   ArrowRight: 1,
@@ -17,49 +18,20 @@ const codeKeyMap: Record<string, number> = {
   Escape: 15
 }
 
-// Character keys - use e.key (actual character typed) for keyboard layout independence
-// This allows AZERTY, QWERTZ, Dvorak, and other layouts to work correctly
-const keyKeyMap: Record<string, number> = {}
-
-// Letter keys (a-z) start at 100 - map by actual character, not physical key
+// Letter keys (a-z) key codes for key press detection (vim mode, etc.)
+const letterKeyMap: Record<string, number> = {}
 for (let i = 0; i < 26; i++) {
   const lower = String.fromCharCode(97 + i) // 'a' to 'z'
   const upper = String.fromCharCode(65 + i) // 'A' to 'Z'
-  keyKeyMap[lower] = 100 + i
-  keyKeyMap[upper] = 100 + i
+  letterKeyMap[lower] = 100 + i
+  letterKeyMap[upper] = 100 + i
 }
 
-// Digit keys (0-9) start at 200
+// Digit keys (0-9) key codes
+const digitKeyMap: Record<string, number> = {}
 for (let i = 0; i < 10; i++) {
-  keyKeyMap[String(i)] = 200 + i
+  digitKeyMap[String(i)] = 200 + i
 }
-
-// Special characters - map by actual character for layout independence
-const specialKeyMap: Record<string, number> = {
-  '-': 210,
-  '_': 210,
-  '=': 211,
-  '+': 211,
-  '[': 212,
-  '{': 212,
-  ']': 213,
-  '}': 213,
-  ';': 214,
-  ':': 214,
-  "'": 215,
-  '"': 215,
-  '`': 216,
-  '~': 216,
-  '\\': 217,
-  '|': 217,
-  ',': 218,
-  '<': 218,
-  '.': 219,
-  '>': 219,
-  '/': 220,
-  '?': 220
-}
-Object.assign(keyKeyMap, specialKeyMap)
 
 // Track shift state
 let shiftHeld = false
@@ -69,21 +41,28 @@ function tagInt(n: number): number {
   return (n << 1) | 1
 }
 
-// Get key code from event, supporting both layout-independent and positional keys
-function getKeyCode(e: KeyboardEvent): number | undefined {
-  // First check positional keys (arrows, enter, etc.) by physical key code
-  const codeKey = codeKeyMap[e.code]
-  if (codeKey !== undefined) {
-    return codeKey
-  }
+// Check if a character is printable (should be sent directly as char input)
+function isPrintableChar(key: string): boolean {
+  // Single character that is printable ASCII or common extended chars
+  if (key.length !== 1) return false
+  const code = key.charCodeAt(0)
+  // Space (32) through tilde (126), plus common extended like £ (163)
+  return code >= 32 && code <= 126 || code === 163
+}
 
-  // Then check character keys by the actual character typed (layout-independent)
-  const keyKey = keyKeyMap[e.key]
-  if (keyKey !== undefined) {
-    return keyKey
-  }
+// Get key code for navigation/control keys
+function getNavigationKeyCode(e: KeyboardEvent): number | undefined {
+  return codeKeyMap[e.code]
+}
 
-  return undefined
+// Get key code for letter keys (used for vim mode detection)
+function getLetterKeyCode(e: KeyboardEvent): number | undefined {
+  return letterKeyMap[e.key]
+}
+
+// Get key code for digit keys
+function getDigitKeyCode(e: KeyboardEvent): number | undefined {
+  return digitKeyMap[e.key]
 }
 
 export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void {
@@ -115,10 +94,38 @@ export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void
       return
     }
 
-    const key = getKeyCode(e)
-    if (key !== undefined && wasmModule) {
+    // Skip if any modifier except shift is held (for shortcuts)
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return
+    }
+
+    // Check for navigation keys first (arrows, enter, backspace, etc.)
+    const navKey = getNavigationKeyCode(e)
+    if (navKey !== undefined && wasmModule) {
       audioManager.play(SoundType.KEY_TYPE)
-      wasmModule._on_key_down(tagInt(key))
+      wasmModule._on_key_down(tagInt(navKey))
+      e.preventDefault()
+      return
+    }
+
+    // Send letter key codes (for vim mode / game control detection)
+    const letterKey = getLetterKeyCode(e)
+    if (letterKey !== undefined && wasmModule) {
+      wasmModule._on_key_down(tagInt(letterKey))
+    }
+
+    // Send digit key codes
+    const digitKey = getDigitKeyCode(e)
+    if (digitKey !== undefined && wasmModule) {
+      wasmModule._on_key_down(tagInt(digitKey))
+    }
+
+    // For printable characters, also send the actual character code directly
+    // This allows keyboard-layout-independent text input
+    if (isPrintableChar(e.key) && wasmModule) {
+      const charCode = e.key.charCodeAt(0)
+      wasmModule._on_char_input(tagInt(charCode))
+      audioManager.play(SoundType.KEY_TYPE)
       e.preventDefault()
     }
   })
@@ -141,9 +148,22 @@ export function setupKeyboardInput(getWasmModule: () => WasmModule | null): void
       return
     }
 
-    const key = getKeyCode(e)
-    if (key !== undefined && wasmModule) {
-      wasmModule._on_key_up(tagInt(key))
+    // Release navigation keys
+    const navKey = getNavigationKeyCode(e)
+    if (navKey !== undefined && wasmModule) {
+      wasmModule._on_key_up(tagInt(navKey))
+    }
+
+    // Release letter keys
+    const letterKey = getLetterKeyCode(e)
+    if (letterKey !== undefined && wasmModule) {
+      wasmModule._on_key_up(tagInt(letterKey))
+    }
+
+    // Release digit keys
+    const digitKey = getDigitKeyCode(e)
+    if (digitKey !== undefined && wasmModule) {
+      wasmModule._on_key_up(tagInt(digitKey))
     }
   })
 }
@@ -188,4 +208,3 @@ export function setupMouseInput(canvas: HTMLCanvasElement): void {
 export function isShiftHeld(): boolean {
   return shiftHeld
 }
-
